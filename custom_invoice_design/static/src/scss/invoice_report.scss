@@ -359,6 +359,52 @@ $font-ar: 'Cairo', 'Tajawal', 'DejaVu Sans', Arial, sans-serif;
         white-space: nowrap;
     }
     .tot-discount { color: $danger; }
+
+    // ---- company-currency column (foreign-currency invoices only) --------
+    // Rendered only when the container carries .has-local: a narrow extra
+    // cell to the LEFT of every amount, muted, with a hairline separator on
+    // its right side only. Specificity is raised with .tbl-totals so it beats
+    // the generic `.tbl-totals td` padding/colour rules.
+    .tbl-totals .tot-local {
+        text-align: right;
+        font-size: .88em;
+        font-weight: 600;
+        color: $muted;
+        white-space: nowrap;
+        padding-left: 4px;
+        padding-right: 6px;
+        border-right: 1px solid $hairline;
+    }
+    .tbl-totals .tot-local-discount { color: $danger; }
+    .tbl-totals .tot-local-head td {
+        font-size: .74em;
+        font-weight: 800;
+        color: $muted;
+        letter-spacing: .3px;
+        padding-top: 2px;
+        padding-bottom: 2px;
+        border-bottom: 1px solid $hairline;
+    }
+    // The header breaks on two lines so the column stays as narrow as the
+    // amounts themselves instead of being driven by the whole caption.
+    .tbl-totals .tot-local-head .tot-local-head-cell {
+        text-align: right;
+        font-size: .7em;
+        font-weight: 800;
+        color: $muted;
+        letter-spacing: .3px;
+        padding: 2px 6px 2px 4px;
+        border-right: 1px solid $hairline;
+        border-bottom: 1px solid $hairline;
+    }
+    .tbl-totals .tot-local-head .tot-local-head-cell .ar {
+        display: block;
+        text-align: right;
+        font-family: $font-ar;
+        letter-spacing: 0;
+    }
+    // the teal grand-total row keeps white text and drops the separator
+    .row-grand .tot-local { border-right: none; }
     .row-grand td {
         background: $primary;
         color: #fff !important;
@@ -512,6 +558,19 @@ $font-ar: 'Cairo', 'Tajawal', 'DejaVu Sans', Arial, sans-serif;
         .tbl-bottom { margin-bottom: 6px; }
         .tbl-footer { margin-bottom: 6px; }
         .footer-card { margin-bottom: 6px; }
+    }
+
+    /* ---- foreign-currency invoice ---------------------------------------
+       The totals card carries an extra company-currency column, so the font
+       and the horizontal padding are tightened to keep the invoice on one
+       A4 page. Declared after fit-a..fit-d and .has-dp: with the same
+       specificity the last rule wins. */
+    &.has-local {
+        .tbl-totals { font-size: .82em; }
+        .tbl-totals td { padding-left: 4px; padding-right: 4px; }
+        .tbl-totals .tot-local { padding-left: 4px; padding-right: 6px; }
+        .tbl-totals .tot-local-head td { padding-top: 1px; padding-bottom: 1px; }
+        .tbl-totals .tot-local-head-cell { padding-top: 1px; padding-bottom: 1px; }
     }
 }
 

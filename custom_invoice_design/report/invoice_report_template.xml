@@ -74,6 +74,36 @@
         <t t-set="dp_total" t-value="dp_untaxed + dp_tax"/>
         <t t-set="has_dp" t-value="bool(dp_lines)"/>
 
+        <!-- Discount: the same value is printed in both totals branches. -->
+        <t t-set="disc" t-value="sum(
+            (l.price_unit * l.quantity) * (l.discount or 0) / 100.0
+            for l in o.invoice_line_ids
+            if l.display_type not in ('line_section', 'line_note')
+        )"/>
+
+        <!-- ============ COMPANY-CURRENCY EQUIVALENT (DISPLAY ONLY) ============
+             When the invoice is issued in another currency than the company
+             one, the totals card prints the company-currency value to the
+             LEFT of every amount. Nothing here is written back to the invoice.
+
+             QWeb forbids closures, so no lambda and no generator expression
+             is used below: every conversion is written inline, and the base
+             values come from the *_signed fields which are already stored in
+             the company currency (currency_field='company_currency_id'). -->
+        <t t-set="company_cur" t-value="o.company_id.currency_id"/>
+        <t t-set="show_local" t-value="o.currency_id != company_cur"/>
+        <t t-set="conv_date" t-value="o.invoice_date or o.date or datetime.date.today()"/>
+        <!-- Base values (company currency, exact accounting values) -->
+        <t t-set="local_untaxed" t-value="company_cur.round(abs(o.amount_untaxed_signed))"/>
+        <t t-set="local_tax" t-value="company_cur.round(abs(o.amount_tax_signed))"/>
+        <t t-set="local_total" t-value="company_cur.round(abs(o.amount_total_signed))"/>
+        <!-- Derived values, converted from the invoice currency -->
+        <t t-set="local_gross_untaxed" t-value="company_cur.round(o.currency_id._convert(gross_untaxed, company_cur, o.company_id, conv_date))"/>
+        <t t-set="local_gross_tax" t-value="company_cur.round(o.currency_id._convert(gross_tax, company_cur, o.company_id, conv_date))"/>
+        <t t-set="local_gross_total" t-value="company_cur.round(o.currency_id._convert(gross_total, company_cur, o.company_id, conv_date))"/>
+        <t t-set="local_dp_total" t-value="company_cur.round(o.currency_id._convert(dp_total, company_cur, o.company_id, conv_date))"/>
+        <t t-set="local_disc" t-value="company_cur.round(o.currency_id._convert(disc, company_cur, o.company_id, conv_date))"/>
+
         <!-- ============ PAYMENTS RECONCILED WITH THIS INVOICE ============
              A payment is printed only when it is really reconciled on this
              invoice (account.move.reconciled_payment_ids): one row per
@@ -109,7 +139,7 @@
         <t t-set="fit_class"
            t-value="'fit-a' if row_weight &lt;= 10 else ('fit-b' if row_weight &lt;= 17 else ('fit-c' if row_weight &lt;= 25 else 'fit-d'))"/>
 
-        <div t-att-class="'article invoice-container ' + fit_class + (' has-dp' if has_dp else '')"
+        <div t-att-class="'article invoice-container ' + fit_class + (' has-dp' if has_dp else '') + (' has-local' if show_local else '')"
              t-attf-style="font-size: {{ '%.2f' % font_pt }}pt"
              t-att-data-oe-model="o._name"
              t-att-data-oe-id="o.id">
@@ -394,18 +424,25 @@
                     <!-- Right: totals card -->
                     <td class="totals-card">
                         <table class="tbl-totals">
-                                <!-- Discount is the same in both branches -->
-                                <t t-set="disc" t-value="sum(
-                                    (l.price_unit * l.quantity) * (l.discount or 0) / 100.0
-                                    for l in o.invoice_line_ids
-                                    if l.display_type not in ('line_section', 'line_note')
-                                )"/>
+                                <!-- Company-currency column header: only rendered
+                                     when the invoice currency differs from the
+                                     company currency. -->
+                                <tr t-if="show_local" class="tot-local-head">
+                                    <td class="tot-lbl"></td>
+                                    <td class="tot-local-head-cell">
+                                        <t t-out="company_cur.name or company_cur.symbol"/> Equivalent / <span class="ar" dir="rtl">المعادل بالريال</span>
+                                    </td>
+                                    <td class="tot-val"></td>
+                                </tr>
                                 <!-- ==================== no down payment ==================== -->
                                 <t t-if="not has_dp">
                                     <!-- Subtotal (untaxed) -->
                                     <tr>
                                         <td class="tot-lbl">
                                             Subtotal / <span class="ar" dir="rtl">المجموع الفرعي</span>
+                                        </td>
+                                        <td class="tot-local" t-if="show_local">
+                                            <t t-out="local_untaxed" t-options='{"widget": "monetary", "display_currency": company_cur}'/>
                                         </td>
                                         <td class="tot-val">
                                             <t t-out="o.amount_untaxed" t-options='{"widget": "monetary", "display_currency": o.currency_id}'/>
@@ -415,6 +452,9 @@
                                     <tr>
                                         <td class="tot-lbl">
                                             Discount / <span class="ar" dir="rtl">الخصم</span>
+                                        </td>
+                                        <td class="tot-local" t-if="show_local">
+                                            <t t-out="local_disc" t-options='{"widget": "monetary", "display_currency": company_cur}'/>
                                         </td>
                                         <td class="tot-val tot-discount">
                                             <t t-out="disc" t-options='{"widget": "monetary", "display_currency": o.currency_id}'/>
@@ -445,6 +485,9 @@
                                                         <t t-if="grp_rate_s and grp_rate_s not in str(grp_name)"> (<t t-out="grp_rate_s"/>)</t>
                                                         / <span class="ar" dir="rtl">ضريبة القيمة المضافة</span>
                                                     </td>
+                                                    <td class="tot-local" t-if="show_local">
+                                                        <t t-out="company_cur.round(o.currency_id._convert(grp.get('tax_amount_currency') or 0, company_cur, o.company_id, conv_date))" t-options='{"widget": "monetary", "display_currency": company_cur}'/>
+                                                    </td>
                                                     <td class="tot-val">
                                                         <t t-out="grp.get('tax_amount_currency') or 0" t-options='{"widget": "monetary", "display_currency": o.currency_id}'/>
                                                     </td>
@@ -455,6 +498,9 @@
                                     <t t-else="">
                                         <tr>
                                             <td class="tot-lbl">VAT / <span class="ar" dir="rtl">ضريبة القيمة المضافة</span></td>
+                                            <td class="tot-local" t-if="show_local">
+                                                <t t-out="local_tax" t-options='{"widget": "monetary", "display_currency": company_cur}'/>
+                                            </td>
                                             <td class="tot-val">
                                                 <t t-out="o.amount_tax" t-options='{"widget": "monetary", "display_currency": o.currency_id}'/>
                                             </td>
@@ -468,6 +514,9 @@
                                         <td class="tot-lbl">
                                             Total Amount (<t t-out="o.currency_id and o.currency_id.name or 'SAR'"/>)
                                             / <span class="ar" dir="rtl">المبلغ الإجمالي</span>
+                                        </td>
+                                        <td class="tot-local" t-if="show_local">
+                                            <t t-out="local_total" t-options='{"widget": "monetary", "display_currency": company_cur}'/>
                                         </td>
                                         <td class="tot-val">
                                             <t t-out="o.amount_total" t-options='{"widget": "monetary", "display_currency": o.currency_id}'/>
@@ -483,6 +532,9 @@
                                         <td class="tot-lbl">
                                             Subtotal / <span class="ar" dir="rtl">المجموع الفرعي</span>
                                         </td>
+                                        <td class="tot-local" t-if="show_local">
+                                            <t t-out="local_gross_untaxed" t-options='{"widget": "monetary", "display_currency": company_cur}'/>
+                                        </td>
                                         <td class="tot-val">
                                             <t t-out="gross_untaxed" t-options='{"widget": "monetary", "display_currency": o.currency_id}'/>
                                         </td>
@@ -490,6 +542,9 @@
                                     <tr>
                                         <td class="tot-lbl">
                                             Discount / <span class="ar" dir="rtl">الخصم</span>
+                                        </td>
+                                        <td class="tot-local" t-if="show_local">
+                                            <t t-out="local_disc" t-options='{"widget": "monetary", "display_currency": company_cur}'/>
                                         </td>
                                         <td class="tot-val tot-discount">
                                             <t t-out="disc" t-options='{"widget": "monetary", "display_currency": o.currency_id}'/>
@@ -499,6 +554,9 @@
                                         <td class="tot-lbl">
                                             VAT Taxes (15%) / <span class="ar" dir="rtl">ضريبة القيمة المضافة</span>
                                         </td>
+                                        <td class="tot-local" t-if="show_local">
+                                            <t t-out="local_gross_tax" t-options='{"widget": "monetary", "display_currency": company_cur}'/>
+                                        </td>
                                         <td class="tot-val">
                                             <t t-out="gross_tax" t-options='{"widget": "monetary", "display_currency": o.currency_id}'/>
                                         </td>
@@ -506,6 +564,9 @@
                                     <tr>
                                         <td class="tot-lbl">
                                             Total before Down Payment / <span class="ar" dir="rtl">الإجمالي قبل خصم الدفعة</span>
+                                        </td>
+                                        <td class="tot-local" t-if="show_local">
+                                            <t t-out="local_gross_total" t-options='{"widget": "monetary", "display_currency": company_cur}'/>
                                         </td>
                                         <td class="tot-val">
                                             <t t-out="gross_total" t-options='{"widget": "monetary", "display_currency": o.currency_id}'/>
@@ -515,11 +576,15 @@
                                         <td class="tot-lbl">
                                             Down Payment Deduction / <span class="ar" dir="rtl">خصم الدفعة المقدمة</span>
                                         </td>
+                                        <td class="tot-local tot-local-discount" t-if="show_local">- <t t-out="local_dp_total" t-options='{"widget": "monetary", "display_currency": company_cur}'/></td>
                                         <td class="tot-val tot-discount">- <t t-out="dp_total" t-options='{"widget": "monetary", "display_currency": o.currency_id}'/></td>
                                     </tr>
                                     <tr>
                                         <td class="tot-lbl">
                                             Net VAT after Deduction / <span class="ar" dir="rtl">الضريبة بعد الخصم</span>
+                                        </td>
+                                        <td class="tot-local" t-if="show_local">
+                                            <t t-out="local_tax" t-options='{"widget": "monetary", "display_currency": company_cur}'/>
                                         </td>
                                         <td class="tot-val">
                                             <t t-out="o.amount_tax" t-options='{"widget": "monetary", "display_currency": o.currency_id}'/>
@@ -529,6 +594,9 @@
                                         <td class="tot-lbl">
                                             Final Total (<t t-out="o.currency_id and o.currency_id.name or 'SAR'"/>)
                                             / <span class="ar" dir="rtl">الإجمالي النهائي بعد خصم الدفعة</span>
+                                        </td>
+                                        <td class="tot-local" t-if="show_local">
+                                            <t t-out="local_total" t-options='{"widget": "monetary", "display_currency": company_cur}'/>
                                         </td>
                                         <td class="tot-val">
                                             <t t-out="o.amount_total" t-options='{"widget": "monetary", "display_currency": o.currency_id}'/>
@@ -546,6 +614,8 @@
                                             <t t-if="pmt.journal_id"> — <t t-out="pmt.journal_id.name"/></t>
                                             / <span class="ar" dir="rtl">الدفعة <t t-out="pmt_no"/></span>
                                         </td>
+                                        <!-- keeps the column count valid; no local value requested here -->
+                                        <td class="tot-local" t-if="show_local"></td>
                                         <td class="tot-val">
                                             <t t-out="pmt.amount or 0.0" t-options='{"widget": "monetary", "display_currency": o.currency_id}'/>
                                             <!-- only when the payment is not in the invoice currency -->
