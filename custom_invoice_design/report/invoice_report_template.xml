@@ -30,6 +30,50 @@
         <t t-set="o"       t-value="o.with_context(lang=lang)"/>
         <t t-set="company" t-value="o.company_id"/>
 
+        <!-- ============ DOWN PAYMENT DETECTION (PRINTING ONLY) ============
+             A final invoice that deducts down payments carries NEGATIVE down
+             payment lines, so a naive total would show a tiny / zero amount and
+             confuse the customer. Everything below is derived from the invoice
+             lines and only feeds the printed breakdown: no accounting value,
+             no QR data and no field is modified.
+
+             `is_downpayment` only exists when the sale / purchase addons are
+             installed, so it is read defensively and the line name / product
+             name is matched against literal English + Arabic keywords. Every
+             keyword is written INSIDE the lambda: QWeb's safe_eval forbids
+             closures (LOAD_DEREF / LOAD_CLOSURE), nested lambdas capturing an
+             outer variable and generator expressions inside a lambda, so no
+             t-set variable may be referenced from a lambda body.
+
+             Only a NEGATIVE product line counts: a positive line named
+             "Down Payment" is the down payment invoice itself and has to print
+             as a normal line. -->
+        <t t-set="dp_lines" t-value="o.invoice_line_ids.filtered(
+            lambda l: l.display_type == 'product'
+            and (l.price_subtotal or 0.0) &lt; 0
+            and (
+                ('is_downpayment' in l._fields and l.is_downpayment)
+                or 'down payment' in ((l.name or '') + ' ' + (l.product_id.name or '')).lower()
+                or 'downpayment' in ((l.name or '') + ' ' + (l.product_id.name or '')).lower()
+                or 'down-payment' in ((l.name or '') + ' ' + (l.product_id.name or '')).lower()
+                or 'دفعة مقدمة' in ((l.name or '') + ' ' + (l.product_id.name or ''))
+                or 'دفعه مقدمه' in ((l.name or '') + ' ' + (l.product_id.name or ''))
+                or 'دفعة مقدّمة' in ((l.name or '') + ' ' + (l.product_id.name or ''))
+                or 'عربون' in ((l.name or '') + ' ' + (l.product_id.name or ''))
+            )
+        )"/>
+        <t t-set="regular_lines"
+           t-value="o.invoice_line_ids.filtered(lambda l: l.display_type == 'product') - dp_lines"/>
+        <t t-set="gross_untaxed" t-value="sum(l.price_subtotal for l in regular_lines)"/>
+        <t t-set="gross_tax"
+           t-value="sum((l.price_total or 0.0) - (l.price_subtotal or 0.0) for l in regular_lines)"/>
+        <t t-set="gross_total" t-value="gross_untaxed + gross_tax"/>
+        <t t-set="dp_untaxed" t-value="abs(sum(l.price_subtotal for l in dp_lines))"/>
+        <t t-set="dp_tax"
+           t-value="abs(sum((l.price_total or 0.0) - (l.price_subtotal or 0.0) for l in dp_lines))"/>
+        <t t-set="dp_total" t-value="dp_untaxed + dp_tax"/>
+        <t t-set="has_dp" t-value="bool(dp_lines)"/>
+
         <!-- ============ PAYMENTS RECONCILED WITH THIS INVOICE ============
              A payment is printed only when it is really reconciled on this
              invoice (account.move.reconciled_payment_ids): one row per
@@ -65,7 +109,7 @@
         <t t-set="fit_class"
            t-value="'fit-a' if row_weight &lt;= 10 else ('fit-b' if row_weight &lt;= 17 else ('fit-c' if row_weight &lt;= 25 else 'fit-d'))"/>
 
-        <div t-att-class="'article invoice-container ' + fit_class"
+        <div t-att-class="'article invoice-container ' + fit_class + (' has-dp' if has_dp else '')"
              t-attf-style="font-size: {{ '%.2f' % font_pt }}pt"
              t-att-data-oe-model="o._name"
              t-att-data-oe-id="o.id">
@@ -254,20 +298,29 @@
                 <tbody>
                     <t t-set="seq" t-value="0"/>
                     <t t-foreach="o.invoice_line_ids" t-as="line">
+                        <!-- "Down Payments" section / note header. The check is
+                             written with literal keywords only (no outer
+                             variable, no lambda) so QWeb's safe_eval accepts
+                             it; it is only ever consulted by the two branches
+                             below. -->
+                        <t t-set="dp_hdr"
+                           t-value="line.display_type in ('line_section', 'line_note') and ('down payment' in (line.name or '').lower() or 'downpayment' in (line.name or '').lower() or 'down-payment' in (line.name or '').lower() or 'دفعة مقدمة' in (line.name or '').lower() or 'دفعه مقدمه' in (line.name or '').lower() or 'دفعة مقدّمة' in (line.name or '').lower() or 'الدفعات المقدّمة' in (line.name or '').lower() or 'الدفعات المقدمة' in (line.name or '').lower())"/>
                         <!-- Section header row -->
-                        <t t-if="line.display_type == 'line_section'">
+                        <t t-if="line.display_type == 'line_section' and not (has_dp and dp_hdr)">
                             <tr class="row-section">
                                 <td colspan="8"><t t-out="line.name"/></td>
                             </tr>
                         </t>
                         <!-- Note row -->
-                        <t t-elif="line.display_type == 'line_note'">
+                        <t t-elif="line.display_type == 'line_note' and not (has_dp and dp_hdr)">
                             <tr class="row-note">
                                 <td colspan="8"><t t-out="line.name"/></td>
                             </tr>
                         </t>
-                        <!-- Normal product line -->
-                        <t t-else="">
+                        <!-- Product line: down payment deductions are excluded
+                             from the printed table (the # column is renumbered
+                             by the seq counter of the lines that remain). -->
+                        <t t-elif="line.display_type == 'product' and line not in dp_lines">
                             <t t-set="seq" t-value="seq + 1"/>
                             <tr>
                                 <td class="c-seq"><t t-out="seq"/></td>
@@ -341,82 +394,147 @@
                     <!-- Right: totals card -->
                     <td class="totals-card">
                         <table class="tbl-totals">
-                                <!-- Subtotal (untaxed) -->
-                                <tr>
-                                    <td class="tot-lbl">
-                                        Subtotal / <span class="ar" dir="rtl">المجموع الفرعي</span>
-                                    </td>
-                                    <td class="tot-val">
-                                        <t t-out="o.amount_untaxed" t-options='{"widget": "monetary", "display_currency": o.currency_id}'/>
-                                    </td>
-                                </tr>
-                                <!-- Discount -->
+                                <!-- Discount is the same in both branches -->
                                 <t t-set="disc" t-value="sum(
                                     (l.price_unit * l.quantity) * (l.discount or 0) / 100.0
                                     for l in o.invoice_line_ids
                                     if l.display_type not in ('line_section', 'line_note')
                                 )"/>
-                                <tr>
-                                    <td class="tot-lbl">
-                                        Discount / <span class="ar" dir="rtl">الخصم</span>
-                                    </td>
-                                    <td class="tot-val tot-discount">
-                                        <t t-out="disc" t-options='{"widget": "monetary", "display_currency": o.currency_id}'/>
-                                    </td>
-                                </tr>
-                                <!-- Tax rows: Odoo 18 tax_totals = {subtotals: [{name, tax_groups: [{id, group_name,
-                                     tax_amount_currency, ...}]}]} (the old groups_by_subtotal / tax_group_rate keys
-                                     do not exist anymore, so the rate is resolved from the invoice lines). -->
-                                <t t-if="o.tax_totals and o.tax_totals.get('subtotals')">
-                                    <t t-set="tax_rates" t-value="{}"/>
-                                    <t t-foreach="o.invoice_line_ids" t-as="rate_line">
-                                        <t t-if="rate_line.display_type == 'product'">
-                                            <t t-foreach="rate_line.tax_ids" t-as="rate_tax">
-                                                <t t-if="rate_tax.tax_group_id"
-                                                   t-set="tax_rates"
-                                                   t-value="{**tax_rates, rate_tax.tax_group_id.id: rate_tax.amount}"/>
+                                <!-- ==================== no down payment ==================== -->
+                                <t t-if="not has_dp">
+                                    <!-- Subtotal (untaxed) -->
+                                    <tr>
+                                        <td class="tot-lbl">
+                                            Subtotal / <span class="ar" dir="rtl">المجموع الفرعي</span>
+                                        </td>
+                                        <td class="tot-val">
+                                            <t t-out="o.amount_untaxed" t-options='{"widget": "monetary", "display_currency": o.currency_id}'/>
+                                        </td>
+                                    </tr>
+                                    <!-- Discount -->
+                                    <tr>
+                                        <td class="tot-lbl">
+                                            Discount / <span class="ar" dir="rtl">الخصم</span>
+                                        </td>
+                                        <td class="tot-val tot-discount">
+                                            <t t-out="disc" t-options='{"widget": "monetary", "display_currency": o.currency_id}'/>
+                                        </td>
+                                    </tr>
+                                    <!-- Tax rows: Odoo 18 tax_totals = {subtotals: [{name, tax_groups: [{id, group_name,
+                                         tax_amount_currency, ...}]}]} (the old groups_by_subtotal / tax_group_rate keys
+                                         do not exist anymore, so the rate is resolved from the invoice lines). -->
+                                    <t t-if="o.tax_totals and o.tax_totals.get('subtotals')">
+                                        <t t-set="tax_rates" t-value="{}"/>
+                                        <t t-foreach="o.invoice_line_ids" t-as="rate_line">
+                                            <t t-if="rate_line.display_type == 'product'">
+                                                <t t-foreach="rate_line.tax_ids" t-as="rate_tax">
+                                                    <t t-if="rate_tax.tax_group_id"
+                                                       t-set="tax_rates"
+                                                       t-value="{**tax_rates, rate_tax.tax_group_id.id: rate_tax.amount}"/>
+                                                </t>
+                                            </t>
+                                        </t>
+                                        <t t-foreach="o.tax_totals.get('subtotals', [])" t-as="sub">
+                                            <t t-foreach="sub.get('tax_groups', [])" t-as="grp">
+                                                <t t-set="grp_rate" t-value="tax_rates.get(grp.get('id'))"/>
+                                                <t t-set="grp_rate_s" t-value="'{:g}%'.format(grp_rate) if grp_rate is not None else ''"/>
+                                                <t t-set="grp_name" t-value="grp.get('group_name') or 'VAT'"/>
+                                                <tr>
+                                                    <td class="tot-lbl">
+                                                        <t t-out="grp_name"/>
+                                                        <t t-if="grp_rate_s and grp_rate_s not in str(grp_name)"> (<t t-out="grp_rate_s"/>)</t>
+                                                        / <span class="ar" dir="rtl">ضريبة القيمة المضافة</span>
+                                                    </td>
+                                                    <td class="tot-val">
+                                                        <t t-out="grp.get('tax_amount_currency') or 0" t-options='{"widget": "monetary", "display_currency": o.currency_id}'/>
+                                                    </td>
+                                                </tr>
                                             </t>
                                         </t>
                                     </t>
-                                    <t t-foreach="o.tax_totals.get('subtotals', [])" t-as="sub">
-                                        <t t-foreach="sub.get('tax_groups', [])" t-as="grp">
-                                            <t t-set="grp_rate" t-value="tax_rates.get(grp.get('id'))"/>
-                                            <t t-set="grp_rate_s" t-value="'{:g}%'.format(grp_rate) if grp_rate is not None else ''"/>
-                                            <t t-set="grp_name" t-value="grp.get('group_name') or 'VAT'"/>
-                                            <tr>
-                                                <td class="tot-lbl">
-                                                    <t t-out="grp_name"/>
-                                                    <t t-if="grp_rate_s and grp_rate_s not in str(grp_name)"> (<t t-out="grp_rate_s"/>)</t>
-                                                    / <span class="ar" dir="rtl">ضريبة القيمة المضافة</span>
-                                                </td>
-                                                <td class="tot-val">
-                                                    <t t-out="grp.get('tax_amount_currency') or 0" t-options='{"widget": "monetary", "display_currency": o.currency_id}'/>
-                                                </td>
-                                            </tr>
-                                        </t>
+                                    <t t-else="">
+                                        <tr>
+                                            <td class="tot-lbl">VAT / <span class="ar" dir="rtl">ضريبة القيمة المضافة</span></td>
+                                            <td class="tot-val">
+                                                <t t-out="o.amount_tax" t-options='{"widget": "monetary", "display_currency": o.currency_id}'/>
+                                            </td>
+                                        </tr>
                                     </t>
+                                    <!-- Total VAT is NOT repeated here: the tax_groups rows above already
+                                         show every VAT amount (and the fallback row shows it when
+                                         tax_totals is unavailable). -->
+                                    <!-- Grand Total -->
+                                    <tr class="row-grand">
+                                        <td class="tot-lbl">
+                                            Total Amount (<t t-out="o.currency_id and o.currency_id.name or 'SAR'"/>)
+                                            / <span class="ar" dir="rtl">المبلغ الإجمالي</span>
+                                        </td>
+                                        <td class="tot-val">
+                                            <t t-out="o.amount_total" t-options='{"widget": "monetary", "display_currency": o.currency_id}'/>
+                                        </td>
+                                    </tr>
                                 </t>
                                 <t t-else="">
+                                    <!-- ==================== down payment ====================
+                                         The invoice lines are shown gross: the customer sees what
+                                         was actually invoiced, then the down payment deduction and
+                                         finally the amount still due (o.amount_total). -->
                                     <tr>
-                                        <td class="tot-lbl">VAT / <span class="ar" dir="rtl">ضريبة القيمة المضافة</span></td>
+                                        <td class="tot-lbl">
+                                            Subtotal / <span class="ar" dir="rtl">المجموع الفرعي</span>
+                                        </td>
+                                        <td class="tot-val">
+                                            <t t-out="gross_untaxed" t-options='{"widget": "monetary", "display_currency": o.currency_id}'/>
+                                        </td>
+                                    </tr>
+                                    <tr>
+                                        <td class="tot-lbl">
+                                            Discount / <span class="ar" dir="rtl">الخصم</span>
+                                        </td>
+                                        <td class="tot-val tot-discount">
+                                            <t t-out="disc" t-options='{"widget": "monetary", "display_currency": o.currency_id}'/>
+                                        </td>
+                                    </tr>
+                                    <tr>
+                                        <td class="tot-lbl">
+                                            VAT Taxes (15%) / <span class="ar" dir="rtl">ضريبة القيمة المضافة</span>
+                                        </td>
+                                        <td class="tot-val">
+                                            <t t-out="gross_tax" t-options='{"widget": "monetary", "display_currency": o.currency_id}'/>
+                                        </td>
+                                    </tr>
+                                    <tr>
+                                        <td class="tot-lbl">
+                                            Total before Down Payment / <span class="ar" dir="rtl">الإجمالي قبل خصم الدفعة</span>
+                                        </td>
+                                        <td class="tot-val">
+                                            <t t-out="gross_total" t-options='{"widget": "monetary", "display_currency": o.currency_id}'/>
+                                        </td>
+                                    </tr>
+                                    <tr>
+                                        <td class="tot-lbl">
+                                            Down Payment Deduction / <span class="ar" dir="rtl">خصم الدفعة المقدمة</span>
+                                        </td>
+                                        <td class="tot-val tot-discount">- <t t-out="dp_total" t-options='{"widget": "monetary", "display_currency": o.currency_id}'/></td>
+                                    </tr>
+                                    <tr>
+                                        <td class="tot-lbl">
+                                            Net VAT after Deduction / <span class="ar" dir="rtl">الضريبة بعد الخصم</span>
+                                        </td>
                                         <td class="tot-val">
                                             <t t-out="o.amount_tax" t-options='{"widget": "monetary", "display_currency": o.currency_id}'/>
                                         </td>
                                     </tr>
+                                    <tr class="row-grand">
+                                        <td class="tot-lbl">
+                                            Final Total (<t t-out="o.currency_id and o.currency_id.name or 'SAR'"/>)
+                                            / <span class="ar" dir="rtl">الإجمالي النهائي بعد خصم الدفعة</span>
+                                        </td>
+                                        <td class="tot-val">
+                                            <t t-out="o.amount_total" t-options='{"widget": "monetary", "display_currency": o.currency_id}'/>
+                                        </td>
+                                    </tr>
                                 </t>
-                                <!-- Total VAT is NOT repeated here: the tax_groups rows above already
-                                     show every VAT amount (and the fallback row shows it when
-                                     tax_totals is unavailable). -->
-                                <!-- Grand Total -->
-                                <tr class="row-grand">
-                                    <td class="tot-lbl">
-                                        Total Amount (<t t-out="o.currency_id and o.currency_id.name or 'SAR'"/>)
-                                        / <span class="ar" dir="rtl">المبلغ الإجمالي</span>
-                                    </td>
-                                    <td class="tot-val">
-                                        <t t-out="o.amount_total" t-options='{"widget": "monetary", "display_currency": o.currency_id}'/>
-                                    </td>
-                                </tr>
                                 <!-- Payments reconciled on this invoice: one row each,
                                      right under Total Amount. -->
                                 <t t-set="pmt_no" t-value="0"/>

@@ -498,6 +498,21 @@ $font-ar: 'Cairo', 'Tajawal', 'DejaVu Sans', Arial, sans-serif;
         .policy-ar { line-height: 1.3; }
         .co-logo { max-height: 45px; }
     }
+
+    /* ---- down payment invoice ------------------------------------------
+       It prints three extra totals rows, so only the blocks that grow are
+       tightened (the QR keeps its 3.2cm size). Declared after fit-a..fit-d on
+       purpose: with the same specificity the last rule wins, and a down
+       payment invoice often lands on fit-a/fit-b. */
+    &.has-dp {
+        .tbl-totals { font-size: .85em; }
+        .tbl-totals td { padding: 3px 8px; }
+        .row-grand td { padding: 5px 8px; }
+        .qr-card { padding: 4px 8px; }
+        .tbl-bottom { margin-bottom: 6px; }
+        .tbl-footer { margin-bottom: 6px; }
+        .footer-card { margin-bottom: 6px; }
+    }
 }
 
 // ===========================================================================
