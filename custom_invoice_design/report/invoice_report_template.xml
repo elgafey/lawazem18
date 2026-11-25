@@ -430,7 +430,7 @@
                                 <tr t-if="show_local" class="tot-local-head">
                                     <td class="tot-lbl"></td>
                                     <td class="tot-local-head-cell">
-                                        <t t-out="company_cur.name or company_cur.symbol"/> Equivalent / <span class="ar" dir="rtl">المعادل بالريال</span>
+                                        <t t-out="company_cur.name or company_cur.symbol"/> Amount / <span class="ar" dir="rtl" style="unicode-bidi: embed;">القيمة بالريال</span>
                                     </td>
                                     <td class="tot-val"></td>
                                 </tr>
