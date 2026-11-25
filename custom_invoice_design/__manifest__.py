@@ -33,10 +33,15 @@ Built for Odoo 18.0:
         'report/invoice_report.xml',
         'report/invoice_report_template.xml',
     ],
-    # No global report assets: all styling lives in the embedded <style> block
-    # of report.invoice_report_document. Injecting into web.report_assets_common
-    # (the bundle shared by EVERY report) from a path outside static/ broke the
-    # whole report bundle and unstyled all printouts.
+    # All print styling lives in static/src/scss/invoice_report.scss and is
+    # injected into the bundle shared by every report. The file MUST stay
+    # under static/ : a path outside static/ breaks the whole bundle and
+    # unstyles all printouts.
+    'assets': {
+        'web.report_assets_common': [
+            'custom_invoice_design/static/src/scss/invoice_report.scss',
+        ],
+    },
     'installable': True,
     'application': False,
     'auto_install': False,

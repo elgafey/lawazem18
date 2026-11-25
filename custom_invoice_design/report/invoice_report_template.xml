@@ -3,6 +3,10 @@
     <!-- =====================================================================
          Custom Invoice Design - Main Entry Point
          Uses docs variable (standard Odoo report rendering context)
+
+         All styling lives in static/src/scss/invoice_report.scss, registered
+         under 'web.report_assets_common' in __manifest__.py (no inline
+         <style> block here anymore).
     ====================================================================== -->
     <template id="invoice_report_template">
         <t t-call="web.html_container">
@@ -26,13 +30,6 @@
         <t t-set="o"       t-value="o.with_context(lang=lang)"/>
         <t t-set="company" t-value="o.company_id"/>
 
-        <!-- Odoo 18 ships Arabic as `ar` (Odoo 20 uses `ar_001`), and the
-             Arabic code is not active on every database. Pick the first
-             installed Arabic language and fall back to English. -->
-        <t t-set="ar_langs"
-           t-value="[code for code, name in env['res.lang'].get_installed() if code.startswith('ar')]"/>
-        <t t-set="ar_lang" t-value="ar_langs[0] if ar_langs else 'en_US'"/>
-
         <!-- ============ PAYMENTS RECONCILED WITH THIS INVOICE ============
              A payment is printed only when it is really reconciled on this
              invoice (account.move.reconciled_payment_ids): one row per
@@ -45,8 +42,8 @@
 
         <!-- ============ DYNAMIC FIT SCALE (with the rows) ============
              row_weight ≈ how many visual lines the invoice will take:
-             +1 per section / note row, +1 extra for every ~34 characters of
-             the item name (the name column holds ~40 chars), +1 per payment
+             +1 per section / note row, +1 extra for every ~40 characters of
+             the item name (the name column holds ~38 chars), +1 per payment
              row.
              font_pt follows row_weight CONTINUOUSLY (not in steps):
                 few rows   -> 10.6pt (bigger, airier text)
@@ -64,7 +61,7 @@
             1 + len(((l.product_id.name if l.product_id else l.name) or '')[:120]) // 40
             if l.display_type == 'product' else 1
             for l in o.invoice_line_ids) + pmt_count"/>
-          <t t-set="font_pt" t-value="max(9.7, 10.6 - max(0, row_weight - 8) * 0.032)"/>
+        <t t-set="font_pt" t-value="max(9.7, 10.6 - max(0, row_weight - 8) * 0.032)"/>
         <t t-set="fit_class"
            t-value="'fit-a' if row_weight &lt;= 10 else ('fit-b' if row_weight &lt;= 17 else ('fit-c' if row_weight &lt;= 25 else 'fit-d'))"/>
 
@@ -73,393 +70,144 @@
              t-att-data-oe-model="o._name"
              t-att-data-oe-id="o.id">
 
-            <!-- =================== EMBEDDED STYLES =================== -->
-            <style>
-                @page { size: A4 portrait; margin: 6mm; }
-                body, html {
-                    margin: 0; padding: 0;
-                    font-family: 'DejaVu Sans', Arial, sans-serif;
-                    color: #212529; font-size: 9pt; line-height: 1.32;
-                    background: #fff;
-                }
-                /* ---- layout ---- */
-                .invoice-container { width: 100%; box-sizing: border-box; }
-
-                /* ---- header ---- */
-                .tbl-header { width:100%; border-collapse:collapse; margin-bottom:10px;
-                              border-bottom:2px solid #0d4855; }
-                .tbl-header td { vertical-align:middle; padding:0 0 6px 0; }
-                .hdr-logo { width:24%; text-align:left; }
-                .hdr-company { width:48%; text-align:center; }
-                .co-logo { max-height:70px; max-width:160px; object-fit:contain; margin-bottom:4px; }
-                .co-name-en { font-size:1.55em; font-weight:800; color:#0d4855; text-transform:uppercase; }
-
-                /* ---- zatca QR (header box, right of the company name) ---- */
-                .hdr-qr { width:28%; text-align:right; vertical-align:middle; }
-                .qr-box { display:inline-block; border:1px solid #0d4855; padding:4px; background:#fff; text-align:center; }
-                .qr-box .qr-cap { font-size:0.6em; color:#0d4855; margin-top:2px; }
-                .qr-img { width:86px; height:86px; display:block; background:#fff; }
-
-                /* ---- title banner ---- */
-                .inv-title {
-                    background:#0d4855; color:#fff; text-align:center;
-                    padding:6px 8px; border-radius:4px;
-                    margin:6px 0 10px 0; font-size:1.44em; font-weight:800;
-                    letter-spacing:1.5px;
-                }
-
-                /* ---- info cards ---- */
-                .tbl-two-box { width:100%; border-collapse:collapse; margin-bottom:10px; }
-                .info-card { border:1px solid #b8d1d8; border-radius:4px; overflow:hidden; background:#fff; }
-                .card-hdr {
-                    background:#0d4855; color:#fff;
-                    padding:4px 8px; font-size:1em; font-weight:700;
-                }
-                .card-hdr-ico { width:12px; height:12px; vertical-align:middle; fill:#fff; margin-right:4px; }
-                .card-body { padding:5px 6px; }
-                .tbl-detail { width:100%; border-collapse:collapse; font-size:0.89em; }
-                .tbl-detail td { padding:2px; vertical-align:top; }
-                .lbl-en { color:#212529; font-weight:600; width:28%; white-space:nowrap; }
-                .sep    { color:#555; font-weight:bold; width:3%; text-align:center; }
-                .val    { color:#111; font-weight:600; width:39%; word-break:break-word; }
-                .lbl-ar { color:#212529; font-weight:600; width:30%; text-align:right; direction:rtl; white-space:nowrap; }
-
-                /* ---- products table ---- */
-                .tbl-lines { width:100%; border-collapse:collapse; margin-bottom:8px; font-size:1.08em; }
-                .tbl-lines thead th {
-                    background:#0d4855; color:#fff;
-                    padding:5px 4px; text-align:center;
-                    font-size:0.83em; font-weight:700;
-                    border:1px solid #08323c; vertical-align:middle;
-                }
-                .tbl-lines thead th .th-en { display:block; line-height:1.1; }
-                .tbl-lines thead th .th-ar { display:block; font-size:0.9em; direction:rtl; margin-top:1px; opacity:.95; }
-                .tbl-lines tbody td {
-                    padding:4px; border:1px solid #d1e1e4;
-                    vertical-align:middle; color:#212529;
-                    font-weight:600;
-                }
-                .tbl-lines tbody tr:nth-child(even) { background:#f8fafb; }
-                /* keep a row and the header together when a page breaks */
-                .tbl-lines thead { display:table-header-group; }
-                .tbl-lines tr { page-break-inside:avoid; }
-                .tbl-totals-wrap, .tbl-three { page-break-inside:avoid; }
-                .tbl-lines .c-seq  { width:3%;  text-align:center; font-weight:bold; }
-                .tbl-lines .c-code { width:11%; text-align:center; }
-                .tbl-lines .c-desc { width:40%; text-align:left; padding-left:6px; letter-spacing:-0.2px; }
-                .tbl-lines .c-qty  { width:5%;  text-align:center; }
-                .tbl-lines .c-uprc { width:12%; text-align:right; padding-right:6px; }
-                .tbl-lines .c-vatp { width:7%;  text-align:center; }
-                .tbl-lines .c-vatv { width:9%;  text-align:right; padding-right:6px; }
-                .tbl-lines .c-tot  { width:13%; text-align:right; padding-right:6px; font-weight:600; }
-                .tbl-lines .row-section td {
-                    background:#e8f0f2; font-weight:bold;
-                    text-align:left; padding:4px 8px;
-                }
-                .tbl-lines .row-note td {
-                    font-style:italic; color:#555;
-                    text-align:left; padding:3px 8px;
-                }
-
-                /* ---- totals ---- */
-                .tbl-totals-wrap { width:100%; border-collapse:collapse; margin-bottom:10px; }
-                .words-box { padding-right:12px; }
-                .words-hdr { font-size:0.89em; font-weight:800; color:#0d4855; margin-bottom:3px; }
-                .words-en  { font-size:0.92em; color:#222; font-weight:600; text-transform:capitalize; margin-bottom:2px; }
-                .words-ar  { font-size:0.92em; color:#198754; font-weight:700; direction:rtl; text-align:right; }
-                .tbl-totals {
-                    width:100%; border-collapse:collapse;
-                    border:1px solid #b8d1d8; border-radius:4px; overflow:hidden; font-size:0.92em;
-                }
-                .tbl-totals td { padding:4px 7px; border-bottom:1px solid #d1e1e4; vertical-align:middle; }
-                .tot-lbl { color:#333; font-weight:600; }
-                .tot-lbl-ar { direction:rtl; display:inline-block; margin-left:4px; }
-                .tot-val { text-align:right; font-weight:bold; color:#111; white-space:nowrap; }
-                .row-grand td {
-                    background:#0d4855; color:#fff !important;
-                    font-size:1em; font-weight:800; border-bottom:none; padding:6px 7px;
-                }
-
-                /* ---- lower three boxes ---- */
-                .tbl-three { width:100%; border-collapse:collapse; margin-bottom:8px; }
-                .tbl-three > tbody > tr > td { vertical-align:top; padding:0; }
-                .tbl-inner { width:100%; border-collapse:collapse; font-size:0.83em; }
-                .tbl-inner td { padding:2px; vertical-align:top; }
-                .i-lbl { color:#444; font-weight:600; white-space:nowrap; }
-                .i-val { color:#111; font-weight:bold; word-break:break-all; }
-                .terms-ol { margin:0; padding:0 0 0 12px; font-size:0.78em; line-height:1.3; color:#333; }
-                .terms-ol li { margin-bottom:3px; }
-                .terms-ar { display:block; direction:rtl; text-align:right; color:#555; font-size:0.92em; }
-                .sig-area { margin-top:6px; padding-top:4px; border-top:1px dashed #b8d1d8; text-align:center; }
-                .sig-lbl  { font-size:0.83em; font-weight:700; color:#0d4855; }
-                .sig-name { font-size:0.89em; font-weight:bold; color:#111; }
-                .sig-title{ font-size:0.78em; color:#555; }
-                .hand-line  { width:100%; height:22px; border-bottom:1px dashed #8aa0a8; }
-                .sig-tbl  { width:100%; border-collapse:collapse; font-size:1.06em; }
-                .sig-tbl td { padding:4px 2px; vertical-align:middle; }
-                .sig-tbl .i-val { width:68%; }
-
-                /* ---- FIT SCALE: spacing follows the number of rows ----
-                   The base font size is computed in the QWeb template
-                   (font_pt) and every size above is relative (em) to it, so
-                   the whole document scales continuously with the rows.
-                   These blocks only tighten paddings and margins:
-                   fit-a : few rows       -> airier spacing
-                   fit-b : normal rows    -> baseline
-                   fit-c : many rows      -> compact spacing
-                   fit-d : a lot of rows  -> tightest spacing, readable font
-                   Thresholds live in the QWeb template (10 / 17 / 25). */
-
-                /* ---- fit-a : airier spacing ---- */
-                .invoice-container.fit-a .tbl-lines thead th { padding:7px 5px; }
-                .invoice-container.fit-a .tbl-lines tbody td { padding:6px 5px; }
-                .invoice-container.fit-a .tbl-lines .row-section td { padding:6px 8px; }
-                .invoice-container.fit-a .tbl-detail td { padding:3px 2px; }
-                .invoice-container.fit-a .card-body { padding:7px 8px; }
-                .invoice-container.fit-a .tbl-totals td { padding:5px 7px; }
-                .invoice-container.fit-a .tbl-inner td { padding:3px 2px; }
-
-                /* ---- fit-c : compact spacing ---- */
-                .invoice-container.fit-c .tbl-lines { margin-bottom:5px; }
-                .invoice-container.fit-c .tbl-lines thead th { padding:4px 3px; }
-                .invoice-container.fit-c .tbl-lines tbody td { padding:2.5px 4px; }
-                .invoice-container.fit-c .tbl-lines .row-section td { padding:3px 6px; }
-                .invoice-container.fit-c .tbl-detail td { padding:1.5px 2px; }
-                .invoice-container.fit-c .card-hdr { padding:3px 6px; }
-                .invoice-container.fit-c .card-body { padding:4px 5px; }
-                .invoice-container.fit-c .tbl-two-box { margin-bottom:6px; }
-                .invoice-container.fit-c .tbl-totals td { padding:3px 6px; }
-                .invoice-container.fit-c .row-grand td { padding:4px 6px; }
-                .invoice-container.fit-c .tbl-totals-wrap { margin-bottom:6px; }
-                .invoice-container.fit-c .tbl-inner td { padding:1.5px 2px; }
-                .invoice-container.fit-c .terms-ol li { margin-bottom:1px; }
-                .invoice-container.fit-c .inv-title { padding:4px 8px; margin:5px 0 7px; }
-                .invoice-container.fit-c .co-logo { max-height:55px; }
-                .invoice-container.fit-c .sig-area { margin-top:4px; }
-
-                /* ---- fit-d : tightest spacing ---- */
-                .invoice-container.fit-d .tbl-lines { margin-bottom:4px; }
-                .invoice-container.fit-d .tbl-lines thead th { padding:3px; }
-                .invoice-container.fit-d .tbl-lines tbody td { padding:1.5px 3px; line-height:1.2; }
-                .invoice-container.fit-d .tbl-lines .row-section td { padding:2px 6px; }
-                .invoice-container.fit-d .tbl-detail td { padding:1px 2px; }
-                .invoice-container.fit-d .card-hdr { padding:3px 6px; }
-                .invoice-container.fit-d .card-body { padding:3px 5px; }
-                .invoice-container.fit-d .tbl-two-box { margin-bottom:5px; }
-                .invoice-container.fit-d .tbl-totals td { padding:2px 6px; }
-                .invoice-container.fit-d .row-grand td { padding:3px 6px; }
-                .invoice-container.fit-d .tbl-totals-wrap { margin-bottom:5px; }
-                .invoice-container.fit-d .tbl-inner td { padding:1px 2px; }
-                .invoice-container.fit-d .terms-ol { line-height:1.22; }
-                .invoice-container.fit-d .terms-ol li { margin-bottom:1px; }
-                .invoice-container.fit-d .inv-title { padding:3px 8px; margin:4px 0 6px; }
-                .invoice-container.fit-d .tbl-header { margin-bottom:5px; }
-                .invoice-container.fit-d .co-logo { max-height:45px; }
-                .invoice-container.fit-d .qr-img { width:62px; height:62px; }
-                .invoice-container.fit-d .sig-area { margin-top:4px; }
-            </style>
-
             <!-- =================== HEADER =================== -->
+            <!-- Left: logo.  Right: company identity (no contact box). -->
             <table class="tbl-header">
                 <tr>
-                    <!-- LEFT: Logo -->
                     <td class="hdr-logo">
                         <t t-if="company and company.logo">
                             <img t-att-src="image_data_uri(company.logo)" class="co-logo" alt="Logo"/>
                         </t>
                     </td>
 
-                    <!-- CENTER: Company name -->
                     <td class="hdr-company">
-                        <div class="co-name-en"><t t-out="company.name if company else ''"/></div>
-                    </td>
-
-                    <!-- RIGHT: ZATCA QR in a small box next to the company name -->
-                    <td class="hdr-qr">
-                        <t t-set="qr_val" t-value="False"/>
-                        <!-- Odoo 18: ZATCA Phase 1 QR lives in l10n_sa_qr_code_str (base64 TLV).
-                             Legacy/other localization field names are kept as fallbacks. -->
-                        <t t-if="'l10n_sa_qr_code_str' in o._fields and o.l10n_sa_qr_code_str">
-                            <t t-set="qr_val" t-value="o.l10n_sa_qr_code_str"/>
-                        </t>
-                        <t t-elif="'l10n_gcc_invoice_qr' in o._fields and o.l10n_gcc_invoice_qr">
-                            <t t-set="qr_val" t-value="o.l10n_gcc_invoice_qr"/>
-                        </t>
-                        <t t-elif="'l10n_sa_qr_code' in o._fields and o.l10n_sa_qr_code">
-                            <t t-set="qr_val" t-value="o.l10n_sa_qr_code"/>
-                        </t>
-                        <div class="qr-box">
-                            <t t-if="qr_val and str(qr_val).startswith('data:image')">
-                                <img t-att-src="qr_val" class="qr-img" alt="QR"/>
-                            </t>
-                            <t t-elif="qr_val and str(qr_val).startswith('iVBOR')">
-                                <img t-attf-src="data:image/png;base64,{{qr_val}}" class="qr-img" alt="QR"/>
-                            </t>
-                            <t t-else="">
-                                <!-- quote_plus(): the ZATCA payload is base64 and may contain '+' and '/'
-                                     which must not be decoded as spaces by the barcode controller. -->
-                                <img t-att-src="'/report/barcode/?barcode_type=QR&amp;value=%s&amp;width=120&amp;height=120' % quote_plus(str(qr_val or o.name or 'INV'))" class="qr-img" alt="QR"/>
-                            </t>
-                            <div class="qr-cap">ZATCA QR</div>
+                        <div class="co-name" dir="auto"><t t-out="company.name if company else ''"/></div>
+                        <div class="co-meta">
+                            VAT No. / <span class="ar" dir="rtl">الرقم الضريبي</span>:
+                            <b><t t-out="(company and company.vat) or '-'"/></b>
+                            <span class="co-meta-sep">|</span>
+                            CR No. / <span class="ar" dir="rtl">السجل التجاري</span>:
+                            <b><t t-out="(company.partner_id.company_registry if company and 'company_registry' in company.partner_id._fields and company.partner_id.company_registry else (company.partner_id.commercial_register if company and 'commercial_register' in company.partner_id._fields and company.partner_id.commercial_register else '-'))"/></b>
+                        </div>
+                        <div class="co-meta">
+                            <t t-out="', '.join([x for x in [company.street, company.city, company.country_id and company.country_id.name] if x]) if company else ''"/>
                         </div>
                     </td>
                 </tr>
             </table>
 
-            <!-- =================== TITLE BANNER =================== -->
+            <!-- =================== TITLE BAND =================== -->
             <!-- ZATCA: a buyer without a VAT number gets a Simplified Tax Invoice. -->
             <t t-set="buyer_vat" t-value="(o.partner_id.vat or '').strip()"/>
-            <div class="inv-title">
-                <t t-if="o.move_type == 'out_refund'">CREDIT NOTE / إشعار دائن</t>
-                <t t-elif="o.move_type == 'in_refund'">DEBIT NOTE / إشعار مدين</t>
-                <t t-elif="not buyer_vat">SIMPLIFIED TAX INVOICE / فاتورة ضريبية مبسطة</t>
-                <t t-else="">TAX INVOICE / فاتورة ضريبية</t>
+            <div class="title-band">
+                <table class="title-band-tbl">
+                    <tr>
+                        <td class="title-band-main">
+                            <div class="inv-title">
+                                <t t-if="o.move_type == 'out_refund'">CREDIT NOTE / <span class="ar" dir="rtl">إشعار دائن</span></t>
+                                <t t-elif="o.move_type == 'in_refund'">DEBIT NOTE / <span class="ar" dir="rtl">إشعار مدين</span></t>
+                                <t t-elif="not buyer_vat">SIMPLIFIED TAX INVOICE / <span class="ar" dir="rtl">فاتورة ضريبية مبسطة</span></t>
+                                <t t-else="">TAX INVOICE / <span class="ar" dir="rtl">فاتورة ضريبية</span></t>
+                            </div>
+                        </td>
+                        <td class="title-band-meta">
+                            <table class="chips">
+                                <tr>
+                                    <td><span class="chip">Invoice No. <t t-out="o.name or '/'"/></span></td>
+                                </tr>
+                                <tr>
+                                    <td><span class="chip">Date <t t-out="o.invoice_date or ''"/></span></td>
+                                </tr>
+                            </table>
+                        </td>
+                    </tr>
+                </table>
             </div>
 
-            <!-- =================== INFO BOXES (Buyer + Invoice) =================== -->
-            <table class="tbl-two-box">
+            <!-- =================== INFO CARDS (Buyer + Invoice) =================== -->
+            <table class="tbl-cards">
                 <tr>
                     <!-- Buyer Details -->
-                    <td style="width:49%;">
+                    <td class="col-card">
                         <div class="info-card">
-                            <div class="card-hdr">
-                                <svg class="card-hdr-ico" viewBox="0 0 24 24">
-                                    <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/>
-                                </svg>
-                                Buyer Details / بيانات المشتري
-                            </div>
-                            <div class="card-body">
-                                <table class="tbl-detail">
-                                    <tr>
-                                        <td class="lbl-en">Customer Name</td>
-                                        <td class="sep">:</td>
-                                        <td class="val"><t t-out="o.partner_id.name if o.partner_id else ''"/></td>
-                                        <td class="lbl-ar">اسم العميل</td>
-                                    </tr>
-                                    <tr>
-                                        <td class="lbl-en">CR No.</td>
-                                        <td class="sep">:</td>
-                                        <td class="val">
-                                            <!-- Odoo 18: commercial registration is stored in the partner's
-                                                 `company_registry`. `commercial_register` is kept as a fallback
-                                                 for custom/legacy fields. -->
-                                            <t t-set="cr_no"
-                                               t-value="(o.partner_id.company_registry if o.partner_id and 'company_registry' in o.partner_id._fields else False)"/>
-                                            <t t-if="not cr_no and o.partner_id and 'commercial_register' in o.partner_id._fields">
-                                                <t t-set="cr_no" t-value="o.partner_id.commercial_register"/>
-                                            </t>
-                                            <t t-if="cr_no" t-out="cr_no"/>
-                                        </td>
-                                        <td class="lbl-ar">رقم السجل التجاري</td>
-                                    </tr>
-                                    <tr>
-                                        <td class="lbl-en">VAT No.</td>
-                                        <td class="sep">:</td>
-                                        <td class="val"><t t-out="(o.partner_id and o.partner_id.vat) or ''"/></td>
-                                        <td class="lbl-ar">الرقم الضريبي</td>
-                                    </tr>
-                                    <tr>
-                                        <td class="lbl-en">Address</td>
-                                        <td class="sep">:</td>
-                                        <td class="val">
-                                            <t t-if="o.partner_id">
-                                                <t t-out="', '.join([x for x in [o.partner_id.street, o.partner_id.city, o.partner_id.country_id and o.partner_id.country_id.name] if x])"/>
-                                            </t>
-                                        </td>
-                                        <td class="lbl-ar">العنوان</td>
-                                    </tr>
-                                    <tr>
-                                        <td class="lbl-en">Email</td>
-                                        <td class="sep">:</td>
-                                        <td class="val"><t t-out="(o.partner_id and o.partner_id.email) or ''"/></td>
-                                        <td class="lbl-ar">البريد الإلكتروني</td>
-                                    </tr>
-                                    <tr>
-                                        <td class="lbl-en">Phone</td>
-                                        <td class="sep">:</td>
-                                        <td class="val">
-                                            <t t-if="o.partner_id and o.partner_id.phone">
-                                                <t t-out="o.partner_id.phone"/>
-                                            </t>
-                                            <t t-elif="o.partner_id and 'mobile' in o.partner_id._fields and o.partner_id.mobile">
-                                                <t t-out="o.partner_id.mobile"/>
-                                            </t>
-                                        </td>
-                                        <td class="lbl-ar">الهاتف</td>
-                                    </tr>
-                                </table>
-                            </div>
+                            <div class="card-title">Buyer Details / <span class="ar" dir="rtl">بيانات المشتري</span></div>
+                            <table class="tbl-detail">
+                                <tr>
+                                    <td class="lbl-en">Customer Name</td>
+                                    <td class="val"><t t-out="o.partner_id.name if o.partner_id else ''"/></td>
+                                    <td class="lbl-ar" dir="rtl">اسم العميل</td>
+                                </tr>
+                                <tr>
+                                    <td class="lbl-en">VAT No.</td>
+                                    <td class="val"><t t-out="(o.partner_id and o.partner_id.vat) or ''"/></td>
+                                    <td class="lbl-ar" dir="rtl">الرقم الضريبي</td>
+                                </tr>
+                                <tr>
+                                    <td class="lbl-en">Address</td>
+                                    <td class="val">
+                                        <t t-if="o.partner_id">
+                                            <t t-out="', '.join([x for x in [o.partner_id.street, o.partner_id.city, o.partner_id.country_id and o.partner_id.country_id.name] if x])"/>
+                                        </t>
+                                    </td>
+                                    <td class="lbl-ar" dir="rtl">العنوان</td>
+                                </tr>
+                            </table>
                         </div>
                     </td>
 
-                    <td style="width:2%;"></td>
+                    <td class="col-gap"></td>
 
                     <!-- Invoice Details -->
-                    <td style="width:49%;">
+                    <td class="col-card">
                         <div class="info-card">
-                            <div class="card-hdr">
-                                <svg class="card-hdr-ico" viewBox="0 0 24 24">
-                                    <path d="M14 2H6c-1.1 0-1.99.9-1.99 2L4 20c0 1.1.89 2 1.99 2H18c1.1 0 2-.9 2-2V8l-6-6zm2 16H8v-2h8v2zm0-4H8v-2h8v2zm-3-5V3.5L18.5 9H13z"/>
-                                </svg>
-                                Invoice Details / تفاصيل الفاتورة
-                            </div>
-                            <div class="card-body">
-                                <!-- Source Document comes from the sales order(s) linked to this
-                                     invoice (sale.order.origin), NOT from the invoice's own
-                                     origin. sale_line_ids exists only when the sale module is
-                                     installed; the guard keeps the report renderable without it. -->
-                                <t t-set="so_orders"
-                                   t-value="o.invoice_line_ids.sale_line_ids.order_id if 'sale_line_ids' in o.invoice_line_ids._fields else False"/>
-                                <t t-set="source_doc"
-                                   t-value="' / '.join([x for x in so_orders.mapped('origin') if x]) if so_orders else ''"/>
-                                <!-- Cash / Credit lives on the linked sales order(s), not on the
-                                     invoice: sst_ comes from sale_order_settlement, spf_ from
-                                     sale_payment_flow. Both modules are optional. -->
-                                <t t-set="so_invoice_types"
-                                   t-value="[x for x in ((so_orders.mapped('sst_invoice_type') if 'sst_invoice_type' in so_orders._fields else []) + (so_orders.mapped('spf_invoice_type') if 'spf_invoice_type' in so_orders._fields else [])) if x] if so_orders else []"/>
-                                <t t-set="invoice_type_label"
-                                   t-value="{'cash': 'Cash / نقدي', 'credit': 'Credit / آجل'}.get(so_invoice_types and so_invoice_types[0] or '', '-')"/>
-                                <table class="tbl-detail">
+                            <div class="card-title">Invoice Details / <span class="ar" dir="rtl">تفاصيل الفاتورة</span></div>
+                            <!-- Source Document comes from the sales order(s) linked to this
+                                 invoice (sale.order.origin), NOT from the invoice's own
+                                 origin. sale_line_ids exists only when the sale module is
+                                 installed; the guard keeps the report renderable without it. -->
+                            <t t-set="so_orders"
+                               t-value="o.invoice_line_ids.sale_line_ids.order_id if 'sale_line_ids' in o.invoice_line_ids._fields else False"/>
+                            <t t-set="source_doc"
+                               t-value="' / '.join([x for x in so_orders.mapped('origin') if x]) if so_orders else ''"/>
+                            <table class="tbl-detail">
                                     <tr>
                                         <td class="lbl-en">Invoice No.</td>
-                                        <td class="sep">:</td>
                                         <td class="val"><t t-out="o.name or '/'"/></td>
-                                        <td class="lbl-ar">رقم الفاتورة</td>
+                                        <td class="lbl-ar" dir="rtl">رقم الفاتورة</td>
                                     </tr>
                                     <tr>
                                         <td class="lbl-en">Invoice Date</td>
-                                        <td class="sep">:</td>
                                         <td class="val"><t t-out="o.invoice_date or ''"/></td>
-                                        <td class="lbl-ar">تاريخ الفاتورة</td>
+                                        <td class="lbl-ar" dir="rtl">تاريخ الفاتورة</td>
+                                    </tr>
+                                    <tr>
+                                        <td class="lbl-en">Due Date</td>
+                                        <td class="val"><t t-out="o.invoice_date_due or '-'"/></td>
+                                        <td class="lbl-ar" dir="rtl">تاريخ الاستحقاق</td>
+                                    </tr>
+                                    <tr>
+                                        <td class="lbl-en">Payment Terms</td>
+                                        <td class="val"><t t-out="o.invoice_payment_term_id and o.invoice_payment_term_id.name or '-'"/></td>
+                                        <td class="lbl-ar" dir="rtl">شروط الدفع</td>
                                     </tr>
                                     <tr>
                                         <td class="lbl-en">Source Document</td>
-                                        <td class="sep">:</td>
                                         <td class="val"><t t-out="source_doc or '-'"/></td>
-                                        <td class="lbl-ar">المستند المصدر</td>
+                                        <td class="lbl-ar" dir="rtl">المستند المصدر</td>
                                     </tr>
                                     <tr>
                                         <td class="lbl-en">Salesman</td>
-                                        <td class="sep">:</td>
                                         <td class="val"><t t-out="o.invoice_user_id and o.invoice_user_id.name or ''"/></td>
-                                        <td class="lbl-ar">مندوب المبيعات</td>
-                                    </tr>
-                                    <tr>
-                                        <td class="lbl-en">Invoice Type</td>
-                                        <td class="sep">:</td>
-                                        <td class="val"><t t-out="invoice_type_label"/></td>
-                                        <td class="lbl-ar">نوع الفاتورة</td>
+                                        <td class="lbl-ar" dir="rtl">مندوب المبيعات</td>
                                     </tr>
                                     <tr>
                                         <!-- Company tax number (was: Currency, which is already
                                              in every column header and in the totals) -->
                                         <td class="lbl-en">Company VAT No.</td>
-                                        <td class="sep">:</td>
                                         <td class="val"><t t-out="(company and company.vat) or '-'"/></td>
-                                        <td class="lbl-ar">الرقم الضريبي للشركة</td>
+                                        <td class="lbl-ar" dir="rtl">الرقم الضريبي للشركة</td>
                                     </tr>
                                 </table>
-                            </div>
                         </div>
                     </td>
                 </tr>
@@ -486,7 +234,7 @@
                             <span class="th-ar">الكمية</span>
                         </th>
                         <th class="c-uprc">
-                            <span class="th-en">Unit Price (<t t-out="o.currency_id and o.currency_id.name or 'SAR'"/>)</span>
+                            <span class="th-en">Unit Price</span>
                             <span class="th-ar">سعر الوحدة</span>
                         </th>
                         <th class="c-vatp">
@@ -494,11 +242,11 @@
                             <span class="th-ar">نسبة VAT</span>
                         </th>
                         <th class="c-vatv">
-                            <span class="th-en">VAT (<t t-out="o.currency_id and o.currency_id.name or 'SAR'"/>)</span>
+                            <span class="th-en">VAT</span>
                             <span class="th-ar">قيمة VAT</span>
                         </th>
                         <th class="c-tot">
-                            <span class="th-en">Total (<t t-out="o.currency_id and o.currency_id.name or 'SAR'"/>)</span>
+                            <span class="th-en">Total</span>
                             <span class="th-ar">الإجمالي</span>
                         </th>
                     </tr>
@@ -533,7 +281,9 @@
                                     <t t-else="" t-out="line.name or ''"/>
                                 </td>
                                 <td class="c-qty"><t t-out="'{:g}'.format(line.quantity or 0)"/></td>
-                                <td class="c-uprc"><t t-out="'{:,.2f}'.format(line.price_unit or 0.0)"/></td>
+                                <td class="c-uprc">
+                                    <t t-out="line.price_unit or 0.0" t-options='{"widget": "monetary", "display_currency": o.currency_id}'/>
+                                </td>
                                 <td class="c-vatp">
                                     <t t-set="line_tax_rate" t-value="sum(line.tax_ids.mapped('amount'))"/>
                                     <t t-out="'{:g}%'.format(line_tax_rate)"/>
@@ -541,243 +291,253 @@
                                 <td class="c-vatv">
                                     <!-- Actual tax amount of the line (after discount), tax_totals style -->
                                     <t t-set="line_tax_val" t-value="(line.price_total or 0.0) - (line.price_subtotal or 0.0)"/>
-                                    <t t-out="'{:,.2f}'.format(line_tax_val)"/>
+                                    <t t-out="line_tax_val" t-options='{"widget": "monetary", "display_currency": o.currency_id}'/>
                                 </td>
-                                <td class="c-tot"><t t-out="'{:,.2f}'.format(line.price_subtotal or 0.0)"/></td>
+                                <td class="c-tot">
+                                    <t t-out="line.price_subtotal or 0.0" t-options='{"widget": "monetary", "display_currency": o.currency_id}'/>
+                                </td>
                             </tr>
                         </t>
                     </t>
                 </tbody>
             </table>
 
-            <!-- =================== TOTALS + AMOUNT IN WORDS =================== -->
-            <table class="tbl-totals-wrap">
+            <!-- =================== BOTTOM: ZATCA QR | TOTALS =================== -->
+            <!-- Both columns are table cells of the same row, so they always end
+                 up the same height: no empty gap next to the taller one. -->
+            <table class="tbl-bottom">
                 <tr>
-                    <!-- Left: Amount in Words -->
-                    <td style="width:55%;" class="words-box">
-                        <div class="words-hdr">Amount in Words / <span style="direction:rtl;">المبلغ كتابياً</span></div>
-                        <div class="words-en">
-                            <t t-if="o.currency_id">
-                                <t t-out="o.currency_id.with_context(lang='en_US').amount_to_text(o.amount_total)"/>
-                            </t>
-                        </div>
-                        <div class="words-ar">
-                            <t t-if="o.currency_id">
-                                <t t-out="o.currency_id.with_context(lang=ar_lang).amount_to_text(o.amount_total)"/>
-                            </t>
-                        </div>
+                    <!-- Left: ZATCA QR card -->
+                    <td class="qr-card">
+                        <div class="qr-cap">ZATCA QR</div>
+                        <t t-set="qr_val" t-value="False"/>
+                        <!-- Odoo 18: ZATCA Phase 1 QR lives in l10n_sa_qr_code_str (base64 TLV).
+                             Legacy/other localization field names are kept as fallbacks. -->
+                        <t t-if="'l10n_sa_qr_code_str' in o._fields and o.l10n_sa_qr_code_str">
+                            <t t-set="qr_val" t-value="o.l10n_sa_qr_code_str"/>
+                        </t>
+                        <t t-elif="'l10n_gcc_invoice_qr' in o._fields and o.l10n_gcc_invoice_qr">
+                            <t t-set="qr_val" t-value="o.l10n_gcc_invoice_qr"/>
+                        </t>
+                        <t t-elif="'l10n_sa_qr_code' in o._fields and o.l10n_sa_qr_code">
+                            <t t-set="qr_val" t-value="o.l10n_sa_qr_code"/>
+                        </t>
+                        <t t-if="qr_val and str(qr_val).startswith('data:image')">
+                            <img t-att-src="qr_val" class="qr-img" alt="QR"/>
+                        </t>
+                        <t t-elif="qr_val and str(qr_val).startswith('iVBOR')">
+                            <img t-attf-src="data:image/png;base64,{{qr_val}}" class="qr-img" alt="QR"/>
+                        </t>
+                        <t t-else="">
+                            <!-- Same payload, only a larger raster so the 3.2cm display stays crisp:
+                                 quote_plus(): the ZATCA payload is base64 and may contain '+' and '/'
+                                 which must not be decoded as spaces by the barcode controller. -->
+                            <img t-att-src="'/report/barcode/?barcode_type=QR&amp;value=%s&amp;width=240&amp;height=240' % quote_plus(str(qr_val or o.name or 'INV'))" class="qr-img" alt="QR"/>
+                        </t>
                     </td>
 
-                    <!-- Right: Totals table -->
-                    <td style="width:45%;">
+                    <td class="col-gap"></td>
+
+                    <!-- Right: totals card -->
+                    <td class="totals-card">
                         <table class="tbl-totals">
-                            <!-- Subtotal (untaxed) -->
-                            <tr>
-                                <td class="tot-lbl">
-                                    Subtotal / <span class="tot-lbl-ar">المجموع الفرعي</span>
-                                </td>
-                                <td class="tot-val"><t t-out="'{:,.2f}'.format(o.amount_untaxed)"/></td>
-                            </tr>
-                            <!-- Discount -->
-                            <t t-set="disc" t-value="sum(
-                                (l.price_unit * l.quantity) * (l.discount or 0) / 100.0
-                                for l in o.invoice_line_ids
-                                if l.display_type not in ('line_section', 'line_note')
-                            )"/>
-                            <tr>
-                                <td class="tot-lbl">
-                                    Discount / <span class="tot-lbl-ar">الخصم</span>
-                                </td>
-                                <td class="tot-val" style="color:#c62828;">
-                                    <t t-out="'{:,.2f}'.format(disc)"/>
-                                </td>
-                            </tr>
-                            <!-- Tax rows: Odoo 18 tax_totals = {subtotals: [{name, tax_groups: [{id, group_name,
-                                 tax_amount_currency, ...}]}]} (the old groups_by_subtotal / tax_group_rate keys
-                                 do not exist anymore, so the rate is resolved from the invoice lines). -->
-                            <t t-if="o.tax_totals and o.tax_totals.get('subtotals')">
-                                <t t-set="tax_rates" t-value="{}"/>
-                                <t t-foreach="o.invoice_line_ids" t-as="rate_line">
-                                    <t t-if="rate_line.display_type == 'product'">
-                                        <t t-foreach="rate_line.tax_ids" t-as="rate_tax">
-                                            <t t-if="rate_tax.tax_group_id"
-                                               t-set="tax_rates"
-                                               t-value="{**tax_rates, rate_tax.tax_group_id.id: rate_tax.amount}"/>
-                                        </t>
-                                    </t>
-                                </t>
-                                <t t-foreach="o.tax_totals.get('subtotals', [])" t-as="sub">
-                                    <t t-foreach="sub.get('tax_groups', [])" t-as="grp">
-                                        <t t-set="grp_rate" t-value="tax_rates.get(grp.get('id'))"/>
-                                        <t t-set="grp_rate_s" t-value="'{:g}%'.format(grp_rate) if grp_rate is not None else ''"/>
-                                        <t t-set="grp_name" t-value="grp.get('group_name') or 'VAT'"/>
-                                        <tr>
-                                            <td class="tot-lbl">
-                                                <t t-out="grp_name"/>
-                                                <t t-if="grp_rate_s and grp_rate_s not in str(grp_name)"> (<t t-out="grp_rate_s"/>)</t>
-                                                / <span class="tot-lbl-ar">ضريبة القيمة المضافة</span>
-                                            </td>
-                                            <td class="tot-val">
-                                                <t t-out="'{:,.2f}'.format(grp.get('tax_amount_currency') or 0)"/>
-                                            </td>
-                                        </tr>
-                                    </t>
-                                </t>
-                            </t>
-                            <t t-else="">
-                                <tr>
-                                    <td class="tot-lbl">VAT / <span class="tot-lbl-ar">ضريبة القيمة المضافة</span></td>
-                                    <td class="tot-val"><t t-out="'{:,.2f}'.format(o.amount_tax)"/></td>
-                                </tr>
-                            </t>
-                            <!-- Total VAT is NOT repeated here: the tax_groups rows above already
-                                 show every VAT amount (and the fallback row shows it when
-                                 tax_totals is unavailable). -->
-                            <!-- Grand Total -->
-                            <tr class="row-grand">
-                                <td class="tot-lbl" style="color:#fff;">
-                                    Total Amount (<t t-out="o.currency_id and o.currency_id.name or 'SAR'"/>)
-                                    / <span class="tot-lbl-ar" style="color:#fff;">المبلغ الإجمالي</span>
-                                </td>
-                                <td class="tot-val" style="color:#fff;">
-                                    <t t-out="'{:,.2f}'.format(o.amount_total)"/>
-                                </td>
-                            </tr>
-                            <!-- Payments reconciled on this invoice: one row each,
-                                 then the paid total (right under Total Amount). -->
-                            <t t-set="pmt_no" t-value="0"/>
-                            <t t-foreach="inv_pmts" t-as="pmt">
-                                <t t-set="pmt_no" t-value="pmt_no + 1"/>
+                                <!-- Subtotal (untaxed) -->
                                 <tr>
                                     <td class="tot-lbl">
-                                        Payment <t t-out="pmt_no"/>
-                                        <t t-if="pmt.journal_id"> — <t t-out="pmt.journal_id.name"/></t>
-                                        / <span class="tot-lbl-ar">الدفعة <t t-out="pmt_no"/></span>
+                                        Subtotal / <span class="ar" dir="rtl">المجموع الفرعي</span>
                                     </td>
                                     <td class="tot-val">
-                                        <t t-out="'{:,.2f}'.format(pmt.amount or 0.0)"/>
-                                        <!-- only when the payment is not in the invoice currency -->
-                                        <t t-if="pmt.currency_id and o.currency_id and pmt.currency_id != o.currency_id">
-                                            <t t-out="pmt.currency_id.name"/>
+                                        <t t-out="o.amount_untaxed" t-options='{"widget": "monetary", "display_currency": o.currency_id}'/>
+                                    </td>
+                                </tr>
+                                <!-- Discount -->
+                                <t t-set="disc" t-value="sum(
+                                    (l.price_unit * l.quantity) * (l.discount or 0) / 100.0
+                                    for l in o.invoice_line_ids
+                                    if l.display_type not in ('line_section', 'line_note')
+                                )"/>
+                                <tr>
+                                    <td class="tot-lbl">
+                                        Discount / <span class="ar" dir="rtl">الخصم</span>
+                                    </td>
+                                    <td class="tot-val tot-discount">
+                                        <t t-out="disc" t-options='{"widget": "monetary", "display_currency": o.currency_id}'/>
+                                    </td>
+                                </tr>
+                                <!-- Tax rows: Odoo 18 tax_totals = {subtotals: [{name, tax_groups: [{id, group_name,
+                                     tax_amount_currency, ...}]}]} (the old groups_by_subtotal / tax_group_rate keys
+                                     do not exist anymore, so the rate is resolved from the invoice lines). -->
+                                <t t-if="o.tax_totals and o.tax_totals.get('subtotals')">
+                                    <t t-set="tax_rates" t-value="{}"/>
+                                    <t t-foreach="o.invoice_line_ids" t-as="rate_line">
+                                        <t t-if="rate_line.display_type == 'product'">
+                                            <t t-foreach="rate_line.tax_ids" t-as="rate_tax">
+                                                <t t-if="rate_tax.tax_group_id"
+                                                   t-set="tax_rates"
+                                                   t-value="{**tax_rates, rate_tax.tax_group_id.id: rate_tax.amount}"/>
+                                            </t>
+                                        </t>
+                                    </t>
+                                    <t t-foreach="o.tax_totals.get('subtotals', [])" t-as="sub">
+                                        <t t-foreach="sub.get('tax_groups', [])" t-as="grp">
+                                            <t t-set="grp_rate" t-value="tax_rates.get(grp.get('id'))"/>
+                                            <t t-set="grp_rate_s" t-value="'{:g}%'.format(grp_rate) if grp_rate is not None else ''"/>
+                                            <t t-set="grp_name" t-value="grp.get('group_name') or 'VAT'"/>
+                                            <tr>
+                                                <td class="tot-lbl">
+                                                    <t t-out="grp_name"/>
+                                                    <t t-if="grp_rate_s and grp_rate_s not in str(grp_name)"> (<t t-out="grp_rate_s"/>)</t>
+                                                    / <span class="ar" dir="rtl">ضريبة القيمة المضافة</span>
+                                                </td>
+                                                <td class="tot-val">
+                                                    <t t-out="grp.get('tax_amount_currency') or 0" t-options='{"widget": "monetary", "display_currency": o.currency_id}'/>
+                                                </td>
+                                            </tr>
+                                        </t>
+                                    </t>
+                                </t>
+                                <t t-else="">
+                                    <tr>
+                                        <td class="tot-lbl">VAT / <span class="ar" dir="rtl">ضريبة القيمة المضافة</span></td>
+                                        <td class="tot-val">
+                                            <t t-out="o.amount_tax" t-options='{"widget": "monetary", "display_currency": o.currency_id}'/>
+                                        </td>
+                                    </tr>
+                                </t>
+                                <!-- Total VAT is NOT repeated here: the tax_groups rows above already
+                                     show every VAT amount (and the fallback row shows it when
+                                     tax_totals is unavailable). -->
+                                <!-- Grand Total -->
+                                <tr class="row-grand">
+                                    <td class="tot-lbl">
+                                        Total Amount (<t t-out="o.currency_id and o.currency_id.name or 'SAR'"/>)
+                                        / <span class="ar" dir="rtl">المبلغ الإجمالي</span>
+                                    </td>
+                                    <td class="tot-val">
+                                        <t t-out="o.amount_total" t-options='{"widget": "monetary", "display_currency": o.currency_id}'/>
+                                    </td>
+                                </tr>
+                                <!-- Payments reconciled on this invoice: one row each,
+                                     right under Total Amount. -->
+                                <t t-set="pmt_no" t-value="0"/>
+                                <t t-foreach="inv_pmts" t-as="pmt">
+                                    <t t-set="pmt_no" t-value="pmt_no + 1"/>
+                                    <tr class="row-payment">
+                                        <td class="tot-lbl">
+                                            Payment <t t-out="pmt_no"/>
+                                            <t t-if="pmt.journal_id"> — <t t-out="pmt.journal_id.name"/></t>
+                                            / <span class="ar" dir="rtl">الدفعة <t t-out="pmt_no"/></span>
+                                        </td>
+                                        <td class="tot-val">
+                                            <t t-out="pmt.amount or 0.0" t-options='{"widget": "monetary", "display_currency": o.currency_id}'/>
+                                            <!-- only when the payment is not in the invoice currency -->
+                                            <t t-if="pmt.currency_id and o.currency_id and pmt.currency_id != o.currency_id">
+                                                <t t-out="pmt.currency_id.name"/>
+                                            </t>
+                                        </td>
+                                    </tr>
+                                </t>
+                                <!-- Paid Amount row removed on purpose. -->
+                            </table>
+                    </td>
+                </tr>
+            </table>
+
+            <!-- =================== FOOTER: BANK DETAILS + POLICY =================== -->
+            <!-- Bank Details, full width: two label/value pairs per row. -->
+            <table class="tbl-footer">
+                <tr>
+                    <td class="col-full">
+                        <div class="info-card">
+                            <div class="card-title">Bank Details / <span class="ar" dir="rtl">تفاصيل الحساب</span></div>
+                            <t t-set="bank" t-value="company and (company.bank_ids or company.partner_id.bank_ids)[:1] or False"/>
+                            <table class="tbl-kv tbl-kv-wide">
+                                <tr>
+                                    <td class="i-lbl">Bank Name:</td>
+                                    <td class="i-val">
+                                        <!-- Odoo 18: bank details are read from res.partner.bank
+                                             (acc_number / acc_holder_name and the related bank_name / bank_bic). -->
+                                        <t t-set="bank_name" t-value="bank and ((bank.bank_name if 'bank_name' in bank._fields else False) or (bank.bank_id.name if 'bank_id' in bank._fields and bank.bank_id else False)) or False"/>
+                                        <t t-out="bank_name or 'Al Rajhi Bank'"/>
+                                    </td>
+                                    <td class="i-lbl">Account Name:</td>
+                                    <td class="i-val">
+                                        <t t-if="bank and 'acc_holder_name' in bank._fields and bank.acc_holder_name">
+                                            <t t-out="bank.acc_holder_name"/>
+                                        </t>
+                                        <t t-elif="bank and 'holder_name' in bank._fields and bank.holder_name">
+                                            <t t-out="bank.holder_name"/>
+                                        </t>
+                                        <t t-else="">
+                                            <t t-out="company.name if company else ''"/>
                                         </t>
                                     </td>
                                 </tr>
-                            </t>
-                            <!-- Paid Amount row removed on purpose. -->
-                        </table>
-                    </td>
-                </tr>
-            </table>
-
-            <!-- =================== LOWER THREE BOXES =================== -->
-            <table class="tbl-three">
-                <tr>
-                    <!-- Bank Details -->
-                    <td style="width:49%;">
-                        <div class="info-card">
-                            <div class="card-hdr">
-                                <svg class="card-hdr-ico" viewBox="0 0 24 24">
-                                    <path d="M4 10v7h3v-7H4zm6 0v7h3v-7h-3zM2 22h19v-3H2v3zm14-12v7h3v-7h-3zm-5-9L2 6v2h19V6l-10-5z"/>
-                                </svg>
-                                Bank Details / تفاصيل الحساب
-                            </div>
-                            <div class="card-body">
-                                <t t-set="bank" t-value="company and (company.bank_ids or company.partner_id.bank_ids)[:1] or False"/>
-                                <table class="tbl-inner">
-                                    <tr>
-                                        <td class="i-lbl">Bank Name:</td>
-                                        <td class="i-val">
-                                            <!-- Odoo 18: bank details are read from res.partner.bank
-                                                 (acc_number / acc_holder_name and the related bank_name / bank_bic). -->
-                                            <t t-set="bank_name" t-value="bank and ((bank.bank_name if 'bank_name' in bank._fields else False) or (bank.bank_id.name if 'bank_id' in bank._fields and bank.bank_id else False)) or False"/>
-                                            <t t-out="bank_name or 'Al Rajhi Bank'"/>
-                                        </td>
-                                    </tr>
-                                    <tr>
-                                        <td class="i-lbl">اسم البنك:</td>
-                                        <td class="i-val" style="direction:rtl;">
-                                            <t t-out="bank_name or 'مصرف الراجحي'"/>
-                                        </td>
-                                    </tr>
-                                    <tr>
-                                        <td class="i-lbl">Account Name:</td>
-                                        <td class="i-val">
-                                            <t t-if="bank and 'acc_holder_name' in bank._fields and bank.acc_holder_name">
-                                                <t t-out="bank.acc_holder_name"/>
-                                            </t>
-                                            <t t-elif="bank and 'holder_name' in bank._fields and bank.holder_name">
-                                                <t t-out="bank.holder_name"/>
-                                            </t>
-                                            <t t-else="">
-                                                <t t-out="company.name if company else ''"/>
-                                            </t>
-                                        </td>
-                                    </tr>
-                                    <tr>
-                                        <td class="i-lbl">IBAN:</td>
-                                        <td class="i-val" style="font-family:monospace; font-size:0.9em;">
-                                            <t t-if="bank and 'acc_number' in bank._fields and bank.acc_number">
-                                                <t t-out="bank.acc_number"/>
-                                            </t>
-                                            <t t-elif="bank and 'iban' in bank._fields and bank.iban">
-                                                <t t-out="bank.iban"/>
-                                            </t>
-                                            <t t-elif="bank and 'account_number' in bank._fields and bank.account_number">
-                                                <t t-out="bank.account_number"/>
-                                            </t>
-                                            <t t-else="">SA08 8000 0123 4567 8901 2345</t>
-                                        </td>
-                                    </tr>
-                                    <tr>
-                                        <td class="i-lbl">Swift:</td>
-                                        <td class="i-val">
-                                            <t t-if="bank and 'bank_bic' in bank._fields and bank.bank_bic">
-                                                <t t-out="bank.bank_bic"/>
-                                            </t>
-                                            <t t-elif="bank and 'bank_id' in bank._fields and bank.bank_id and bank.bank_id.bic">
-                                                <t t-out="bank.bank_id.bic"/>
-                                            </t>
-                                            <t t-else="">RJHBSI</t>
-                                        </td>
-                                    </tr>
-                                </table>
-                            </div>
-                        </div>
-                    </td>
-
-                    <td style="width:2%;"></td>
-
-                    <!-- Salesman + Signature -->
-                    <td style="width:49%;">
-                        <div class="info-card">
-                            <div class="card-hdr">
-                                <svg class="card-hdr-ico" viewBox="0 0 24 24">
-                                    <path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/>
-                                </svg>
-                                Signature / التوقيع
-                            </div>
-                            <div class="card-body">
-                                <table class="sig-tbl">
-                                    <tr>
-                                        <td class="i-lbl">Name / الاسم</td>
-                                        <td class="i-val"><div class="hand-line"></div></td>
-                                    </tr>
-                                    <tr>
-                                        <td class="i-lbl">Phone / الهاتف</td>
-                                        <td class="i-val"><div class="hand-line"></div></td>
-                                    </tr>
-                                    <tr>
-                                        <td class="i-lbl">Signature / التوقيع</td>
-                                        <td class="i-val"><div class="hand-line"></div></td>
-                                    </tr>
-                                </table>
-                            </div>
+                                <tr>
+                                    <td class="i-lbl" dir="rtl">اسم البنك:</td>
+                                    <td class="i-val" dir="rtl">
+                                        <t t-out="bank_name or 'مصرف الراجحي'"/>
+                                    </td>
+                                    <td class="i-lbl">Swift:</td>
+                                    <td class="i-val">
+                                        <t t-if="bank and 'bank_bic' in bank._fields and bank.bank_bic">
+                                            <t t-out="bank.bank_bic"/>
+                                        </t>
+                                        <t t-elif="bank and 'bank_id' in bank._fields and bank.bank_id and bank.bank_id.bic">
+                                            <t t-out="bank.bank_id.bic"/>
+                                        </t>
+                                        <t t-else="">RJHBSI</t>
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td class="i-lbl">IBAN:</td>
+                                    <td class="i-val mono" colspan="3">
+                                        <t t-if="bank and 'acc_number' in bank._fields and bank.acc_number">
+                                            <t t-out="bank.acc_number"/>
+                                        </t>
+                                        <t t-elif="bank and 'iban' in bank._fields and bank.iban">
+                                            <t t-out="bank.iban"/>
+                                        </t>
+                                        <t t-elif="bank and 'account_number' in bank._fields and bank.account_number">
+                                            <t t-out="bank.account_number"/>
+                                        </t>
+                                        <t t-else="">SA08 8000 0123 4567 8901 2345</t>
+                                    </td>
+                                </tr>
+                            </table>
                         </div>
                     </td>
                 </tr>
             </table>
 
+            <!-- Return &amp; Exchange Policy -->
+            <div class="info-card footer-card policy-card">
+                <div class="card-title">Return &amp; Exchange Policy / <span class="ar" dir="rtl">سياسة الاسترجاع والاستبدال</span></div>
+                <ul class="policy-list">
+                    <li>
+                        <div class="policy-en"><span class="policy-dot">•</span> Customers may return or exchange any item within 7 days of purchase for a full refund or exchange, provided the item is unused and in its original condition.</div>
+                        <div class="policy-ar" dir="rtl">يمكن للعميل إرجاع أو استبدال أي منتج خلال 7 أيام من تاريخ الشراء مع استرداد كامل المبلغ أو الاستبدال، بشرط أن يكون المنتج غير مستخدم وفي حالته الأصلية.</div>
+                    </li>
+                    <li>
+                        <div class="policy-en"><span class="policy-dot">•</span> From day 8 up to 14 days after purchase, exchange only is accepted. No refunds will be issued during this period.</div>
+                        <div class="policy-ar" dir="rtl">من اليوم الثامن وحتى 14 يوماً من تاريخ الشراء، يُقبل الاستبدال فقط ولا يتم استرداد المبلغ خلال هذه الفترة.</div>
+                    </li>
+                    <li>
+                        <div class="policy-en"><span class="policy-dot">•</span> No returns or exchanges will be accepted after 14 days from the date of purchase.</div>
+                        <div class="policy-ar" dir="rtl">لا يُقبل أي إرجاع أو استبدال بعد مرور 14 يوماً من تاريخ الشراء.</div>
+                    </li>
+                </ul>
+            </div>
 
+        </div>
+
+        <!-- =================== PAGE FOOTER ===================
+             Extracted by ir.actions.report._prepare_html() (class="footer")
+             and repeated on every page with the page counter substituted by
+             the minimal_layout script (class="page" / class="topage"). -->
+        <div class="footer inv-footer">
+            <t t-out="company.name if company else ''"/>
+            &#160;&#160;·&#160;&#160;Page <span class="page"/> / <span class="topage"/>
         </div>
     </template>
 </odoo>

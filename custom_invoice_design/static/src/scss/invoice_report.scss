@@ -1,0 +1,515 @@
+// ============================================================================
+// Custom Invoice Design — print stylesheet (Odoo 18)
+//
+// Registered in the 'web.report_assets_common' bundle (see __manifest__.py),
+// which is the bundle loaded by web.report_layout for every QWeb report, so it
+// also styles the extracted page footer rendered through web.minimal_layout.
+//
+// Design rules (wkhtmltopdf / old QtWebKit safe):
+//   * tables, inline-block and overflow:hidden only — NO flexbox, NO grid,
+//     NO CSS custom properties (SCSS variables are compiled away);
+//   * hairline separators (#d9e2e6) instead of heavy black borders;
+//   * soft tinted cards with a 6px radius;
+//   * every size is relative (em) to the base font size that the QWeb template
+//     computes per invoice (font_pt), so fit-a..fit-d scale the whole page.
+// ============================================================================
+
+// ---- brand palette (defined once) -----------------------------------------
+$primary:  #0b4a54;   // dark teal  — header line, table head, grand total
+$accent:   #14808f;   // teal       — section titles, accents
+$tint:     #eef6f7;   // light tint — card backgrounds
+$text:     #1f2933;   // main text
+$muted:    #6b7785;   // labels
+$hairline: #d9e2e6;   // 1px separators
+$zebra:    #f6fafb;   // even rows
+$danger:   #b3261e;   // discount value
+$radius:   6px;
+
+// ---- typography (no font files ship with the module, so these are only
+//      preferred names: the current DejaVu/Arial stack is the fallback) -----
+$font-en: 'Roboto', 'DejaVu Sans', Arial, sans-serif;
+$font-ar: 'Cairo', 'Tajawal', 'DejaVu Sans', Arial, sans-serif;
+
+@page {
+    size: A4 portrait;
+    margin: 6mm 6mm 14mm 6mm;
+}
+
+// ===========================================================================
+// Invoice
+// ===========================================================================
+.invoice-container {
+    width: 100%;
+    box-sizing: border-box;
+    font-family: $font-en;
+    color: $text;
+    line-height: 1.35;
+    background: #fff;
+
+    // Arabic runs get the Arabic family without touching the LTR layout
+    [dir="rtl"] { font-family: $font-ar; }
+
+    // ---------------------------------------------------------------- header
+    .tbl-header {
+        width: 100%;
+        border-collapse: collapse;
+        margin-bottom: 8px;
+        border-bottom: 2px solid $primary;
+    }
+    .tbl-header td {
+        vertical-align: middle;
+        padding: 0 0 8px 0;
+    }
+    .hdr-logo { width: 24%; text-align: left; }
+    .hdr-company { width: 76%; text-align: right; }
+    .co-logo {
+        max-height: 70px;
+        max-width: 170px;
+        object-fit: contain;
+    }
+    .co-name {
+        font-size: 1.5em;
+        font-weight: 800;
+        color: $primary;
+        line-height: 1.15;
+        letter-spacing: .2px;
+    }
+    .co-meta {
+        font-size: .76em;
+        color: $muted;
+        margin-top: 2px;
+        line-height: 1.4;
+    }
+    .co-meta b { color: $text; font-weight: 700; }
+    .co-meta .ar { font-family: $font-ar; }
+    .co-meta-sep { color: $hairline; padding: 0 5px; }
+
+    // ------------------------------------------------------------ title band
+    .title-band {
+        background: $primary;
+        border-radius: $radius;
+        padding: 7px 12px;
+        margin: 0 0 8px 0;
+    }
+    .title-band-tbl {
+        width: 100%;
+        border-collapse: collapse;
+    }
+    .title-band-tbl td {
+        padding: 0;
+        vertical-align: middle;
+    }
+    .title-band-main { text-align: left; }
+    .title-band-meta { width: 33%; text-align: right; }
+    .inv-title {
+        color: #fff;
+        font-size: 1.32em;
+        font-weight: 800;
+        letter-spacing: 1px;
+        line-height: 1.2;
+    }
+    .inv-title .ar {
+        font-family: $font-ar;
+        font-weight: 700;
+        letter-spacing: 0;
+    }
+    .chips {
+        border-collapse: collapse;
+        margin-left: auto;
+    }
+    .chips td {
+        padding: 1px 0;
+        text-align: right;
+    }
+    .chip {
+        display: inline-block;
+        background: #fff;
+        color: $primary;
+        border-radius: 10px;
+        padding: 1px 8px;
+        font-size: .66em;
+        font-weight: 700;
+        letter-spacing: .3px;
+        white-space: nowrap;
+    }
+
+    // ----------------------------------------------------------------- cards
+    .tbl-cards,
+    .tbl-footer {
+        width: 100%;
+        border-collapse: collapse;
+        margin-bottom: 8px;
+        page-break-inside: avoid;
+    }
+    .tbl-cards > tbody > tr > td,
+    .tbl-footer > tbody > tr > td {
+        vertical-align: top;
+        padding: 0;
+    }
+    .col-card { width: 49%; }
+    .col-gap { width: 2%; }
+
+    .info-card {
+        background: $tint;
+        border-radius: $radius;
+        padding: 5px 9px;
+    }
+    .card-title {
+        font-size: .7em;
+        font-weight: 800;
+        letter-spacing: 1.1px;
+        text-transform: uppercase;
+        color: $accent;
+        padding-bottom: 4px;
+        border-bottom: 1px solid $hairline;
+        margin-bottom: 2px;
+    }
+    .card-title .ar {
+        font-family: $font-ar;
+        text-transform: none;
+        letter-spacing: 0;
+        font-weight: 700;
+    }
+
+    .tbl-detail {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: .86em;
+        line-height: 1.2;
+    }
+    .tbl-detail td {
+        padding: 2.5px 2px;
+        vertical-align: top;
+        border-top: 1px solid $hairline;
+    }
+    .tbl-detail tr:first-child td { border-top: none; }
+    .lbl-en {
+        width: 28%;
+        color: $muted;
+        font-weight: 600;
+        white-space: nowrap;
+    }
+    .val {
+        width: 44%;
+        color: $text;
+        font-weight: 700;
+        word-break: break-word;
+    }
+    .lbl-ar {
+        width: 28%;
+        color: $muted;
+        font-weight: 600;
+        white-space: nowrap;
+        text-align: right;
+        font-family: $font-ar;
+    }
+
+    // -------------------------------------------------------- invoice lines
+    .tbl-lines {
+        width: 100%;
+        border-collapse: collapse;
+        margin-bottom: 8px;
+        font-size: 1.02em;
+    }
+    .tbl-lines thead {
+        display: table-header-group;   // repeat on every page
+    }
+    .tbl-lines tr { page-break-inside: avoid; }
+
+    .tbl-lines thead th {
+        background: $primary;
+        color: #fff;
+        padding: 5px 5px;
+        text-align: center;
+        font-size: .78em;
+        font-weight: 700;
+        letter-spacing: .3px;
+        vertical-align: middle;
+        border: none;
+    }
+    .tbl-lines thead th .th-en {
+        display: block;
+        line-height: 1.15;
+        text-transform: uppercase;
+    }
+    .tbl-lines thead th .th-ar {
+        display: block;
+        font-size: .92em;
+        direction: rtl;
+        margin-top: 1px;
+        font-family: $font-ar;
+        opacity: .93;
+    }
+    .tbl-lines tbody td {
+        padding: 4px 5px;
+        border: none;
+        border-bottom: 1px solid $hairline;
+        vertical-align: middle;
+        color: $text;
+        font-weight: 600;
+    }
+    .tbl-lines tbody tr:nth-child(even) td { background: $zebra; }
+
+    .tbl-lines .c-seq  { width: 3%;  text-align: center; }
+    .tbl-lines .c-code {
+        width: 11%;
+        text-align: center;
+        color: $muted;
+        font-size: .84em;
+    }
+    .tbl-lines .c-desc {
+        width: 33%;
+        text-align: left;
+        padding-left: 8px;
+        font-weight: 700;
+        letter-spacing: -.1px;
+    }
+    .tbl-lines .c-qty  { width: 5%;  text-align: right; }
+    .tbl-lines .c-uprc { width: 13%; text-align: right; white-space: nowrap; }
+    .tbl-lines .c-vatp { width: 7%;  text-align: right; white-space: nowrap; }
+    .tbl-lines .c-vatv { width: 13%; text-align: right; white-space: nowrap; }
+    .tbl-lines .c-tot  {
+        width: 15%;
+        text-align: right;
+        white-space: nowrap;
+        font-weight: 800;
+    }
+
+    .tbl-lines .row-section td {
+        background: $tint;
+        color: $primary;
+        font-weight: 800;
+        text-align: left;
+        padding: 5px 8px;
+        border-bottom: 1px solid $hairline;
+    }
+    .tbl-lines .row-note td {
+        color: $muted;
+        font-style: italic;
+        font-weight: 600;
+        text-align: left;
+        padding: 4px 8px;
+        border-bottom: 1px solid $hairline;
+    }
+
+    // --------------------------------------------- bottom: QR | totals
+    // Both cards are table cells of the same row, so they always share the
+    // same height (no empty gap next to the taller one).
+    .tbl-bottom {
+        width: 100%;
+        border-collapse: separate;   // keeps the rounded card corners intact
+        border-spacing: 0;
+        margin-bottom: 8px;
+        page-break-inside: avoid;
+    }
+    .tbl-bottom > tbody > tr > td {
+        vertical-align: middle;
+        padding: 0;
+    }
+    .tbl-bottom .col-gap { width: 2%; }
+
+    .qr-card {
+        width: 44%;
+        background: $tint;
+        border-radius: $radius;
+        padding: 6px 10px;
+        text-align: center;
+    }
+    .qr-cap {
+        font-size: .7em;
+        font-weight: 800;
+        letter-spacing: 1.1px;
+        text-transform: uppercase;
+        color: $accent;
+        margin-bottom: 4px;
+    }
+    // ~3.2cm so the ZATCA QR stays scannable
+    .qr-img {
+        width: 3.2cm;
+        height: 3.2cm;
+        display: block;
+        margin: 0 auto;
+        background: #fff;
+    }
+
+    .totals-card {
+        width: 54%;
+        background: #fff;
+        border: 1px solid $hairline;
+        border-radius: $radius;
+        padding: 4px 6px;   // inset so the teal total row never touches the corners
+    }
+    .tbl-totals {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: .9em;
+    }
+    .tbl-totals td {
+        padding: 5px 10px;
+        border-bottom: 1px solid $hairline;
+        vertical-align: middle;
+    }
+    .tbl-totals tr:last-child td { border-bottom: none; }
+    .tot-lbl { color: $muted; font-weight: 600; }
+    .tot-lbl .ar { font-family: $font-ar; }
+    .tot-val {
+        text-align: right;
+        font-weight: 800;
+        color: $text;
+        white-space: nowrap;
+    }
+    .tot-discount { color: $danger; }
+    .row-grand td {
+        background: $primary;
+        color: #fff !important;
+        font-size: 1.12em;
+        font-weight: 800;
+        border-bottom: none;
+        padding: 8px 10px;
+    }
+    .row-grand .tot-lbl,
+    .row-grand .tot-lbl .ar { color: #fff; }
+    .row-payment td { font-size: .88em; }
+    .row-payment .tot-lbl { color: $muted; }
+    .row-payment .tot-val { color: $text; }
+
+    // -------------------------------------------------------- footer cards
+    .tbl-kv {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: .84em;
+        line-height: 1.25;
+    }
+    .tbl-kv td {
+        padding: 2.5px 2px;
+        vertical-align: middle;
+        border-top: 1px solid $hairline;
+    }
+    .tbl-kv tr:first-child td { border-top: none; }
+    // Arabic label/value cells keep the RTL character order but stay anchored
+    // to the left of their column, exactly like their LTR counterparts.
+    .tbl-kv td[dir="rtl"] { text-align: left; }
+    .i-lbl {
+        width: 38%;
+        color: $muted;
+        font-weight: 600;
+        white-space: nowrap;
+    }
+    .i-val {
+        color: $text;
+        font-weight: 700;
+        word-break: break-word;
+    }
+    .i-val.mono {
+        font-family: 'DejaVu Sans Mono', 'Courier New', monospace;
+        font-size: .92em;
+        font-weight: 600;
+        letter-spacing: .2px;
+    }
+    // Full-width footer cell (Bank Details)
+    .col-full { width: 100%; }
+
+    // Two label/value pairs per row (full-width Bank Details card)
+    .tbl-kv-wide .i-lbl { width: 14%; }
+    .tbl-kv-wide .i-val { width: 36%; }
+    .tbl-kv-wide .i-val[colspan="3"] { width: 86%; }
+
+    // ------------------------------------------------ footer: policy card
+    .footer-card {
+        margin-bottom: 8px;
+        page-break-inside: avoid;
+    }
+    .policy-list {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+    }
+    .policy-list li { margin-bottom: 4px; }
+    .policy-list li:last-child { margin-bottom: 0; }
+    .policy-en {
+        font-size: .83em;
+        line-height: 1.3;
+        font-weight: 600;
+        color: $text;
+        text-indent: -1em;   // hanging indent for the bullet
+        padding-left: 1em;
+    }
+    .policy-dot { color: $accent; }
+    .policy-ar {
+        font-size: .76em;
+        line-height: 1.35;
+        font-weight: 600;
+        color: $muted;
+        text-align: right;
+        font-family: $font-ar;
+        margin-top: 1px;
+    }
+
+    // ------------------------------------------------- fit scale (spacing)
+    // The base font size comes from QWeb (font_pt); these only tighten the
+    // paddings/margins so a long invoice still fits on one page.
+    &.fit-a {
+        .tbl-lines thead th { padding: 6px 4px; }
+        .tbl-lines tbody td { padding: 5px 5px; }
+        .tbl-detail td { padding: 3px 2px; }
+        .tbl-kv td { padding: 3px 2px; }
+        .tbl-totals td { padding: 5px 10px; }
+        .row-grand td { padding: 8px 10px; }
+    }
+
+    &.fit-c {
+        .tbl-header { margin-bottom: 6px; }
+        .title-band { padding: 6px 10px; margin-bottom: 7px; }
+        .tbl-cards,
+        .tbl-footer { margin-bottom: 7px; }
+        .info-card { padding: 5px 8px; }
+        .tbl-detail td { padding: 2px 2px; }
+        .tbl-kv td { padding: 2px 2px; }
+        .tbl-lines { margin-bottom: 7px; }
+        .tbl-lines thead th { padding: 4px 4px; }
+        .tbl-lines tbody td { padding: 3px 4px; }
+        .tbl-bottom { margin-bottom: 7px; }
+        .qr-card { padding: 6px 8px; }
+        .tbl-totals td { padding: 4px 10px; }
+        .row-grand td { padding: 6px 10px; }
+        .footer-card { margin-bottom: 6px; }
+        .policy-list li { margin-bottom: 3px; }
+        .co-logo { max-height: 55px; }
+    }
+
+    &.fit-d {
+        .tbl-header { margin-bottom: 5px; }
+        .title-band { padding: 5px 10px; margin-bottom: 6px; }
+        .tbl-cards,
+        .tbl-footer { margin-bottom: 6px; }
+        .info-card { padding: 4px 7px; }
+        .tbl-detail td { padding: 1.5px 2px; }
+        .tbl-kv td { padding: 1.5px 2px; }
+        .tbl-lines { margin-bottom: 6px; }
+        .tbl-lines thead th { padding: 3px 4px; }
+        .tbl-lines tbody td { padding: 2px 4px; line-height: 1.25; }
+        .tbl-bottom { margin-bottom: 6px; }
+        .qr-card { padding: 5px 7px; }
+        .tbl-totals td { padding: 3px 10px; }
+        .row-grand td { padding: 5px 10px; }
+        .footer-card { margin-bottom: 5px; }
+        .policy-list li { margin-bottom: 2px; }
+        .policy-en { line-height: 1.3; }
+        .policy-ar { line-height: 1.3; }
+        .co-logo { max-height: 45px; }
+    }
+}
+
+// ===========================================================================
+// Page footer — extracted by ir.actions.report._prepare_html() and repeated on
+// every page through web.minimal_layout (which loads this same bundle, so the
+// rules below apply there too).
+// ===========================================================================
+.footer.inv-footer {
+    text-align: center;
+    font-size: 7.5pt;
+    line-height: 1.3;
+    color: $muted;
+    padding-top: 3mm;
+    font-family: $font-en;
+}
