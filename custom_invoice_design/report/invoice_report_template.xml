@@ -245,16 +245,6 @@
                                t-value="' / '.join([x for x in so_orders.mapped('origin') if x]) if so_orders else ''"/>
                             <table class="tbl-detail">
                                     <tr>
-                                        <td class="lbl-en">Invoice No.</td>
-                                        <td class="val"><t t-out="o.name or '/'"/></td>
-                                        <td class="lbl-ar" dir="rtl">رقم الفاتورة</td>
-                                    </tr>
-                                    <tr>
-                                        <td class="lbl-en">Invoice Date</td>
-                                        <td class="val"><t t-out="o.invoice_date or ''"/></td>
-                                        <td class="lbl-ar" dir="rtl">تاريخ الفاتورة</td>
-                                    </tr>
-                                    <tr>
                                         <td class="lbl-en">Due Date</td>
                                         <td class="val"><t t-out="o.invoice_date_due or '-'"/></td>
                                         <td class="lbl-ar" dir="rtl">تاريخ الاستحقاق</td>
